@@ -17,49 +17,54 @@ document.getElementById('go').addEventListener('click', async () => {
     const photo = await pickPhoto();
     log(`photo ${photo.width}x${photo.height}`);
 
-    let t = performance.now();
-    const pixels = imageToPixels(photo.bitmap, Infinity);
-    photo.revoke();
-    log(`read pixels in ${since(t)}`);
+    try {
+      let t = performance.now();
+      let pixels = imageToPixels(photo.bitmap, Infinity);
+      log(`read pixels in ${since(t)}`);
 
-    // A hardcoded quad at a 10% inset — the real one comes from the corner
-    // editor in Task 7. This only has to prove the pipeline runs.
-    const inset = 0.1;
-    const quad = [
-      { x: pixels.width * inset, y: pixels.height * inset },
-      { x: pixels.width * (1 - inset), y: pixels.height * inset },
-      { x: pixels.width * (1 - inset), y: pixels.height * (1 - inset) },
-      { x: pixels.width * inset, y: pixels.height * (1 - inset) },
-    ];
+      // A hardcoded quad at a 10% inset — the real one comes from the corner
+      // editor in Task 7. This only has to prove the pipeline runs.
+      const inset = 0.1;
+      const quad = [
+        { x: pixels.width * inset, y: pixels.height * inset },
+        { x: pixels.width * (1 - inset), y: pixels.height * inset },
+        { x: pixels.width * (1 - inset), y: pixels.height * (1 - inset) },
+        { x: pixels.width * inset, y: pixels.height * (1 - inset) },
+      ];
 
-    const size = outputSizeFor(quad);
-    log(`output ${size.width}x${size.height}`);
+      const size = outputSizeFor(quad);
+      log(`output ${size.width}x${size.height}`);
 
-    t = performance.now();
-    const flat = warpQuadToRect(pixels, quad, size.width, size.height);
-    log(`warp in ${since(t)}`);
+      t = performance.now();
+      let flat = warpQuadToRect(pixels, quad, size.width, size.height);
+      pixels = null;
+      log(`warp in ${since(t)}`);
 
-    t = performance.now();
-    const scanned = applyMode(flat, 'scan');
-    log(`threshold in ${since(t)}`);
+      t = performance.now();
+      const scanned = applyMode(flat, 'scan');
+      flat = null;
+      log(`threshold in ${since(t)}`);
 
-    t = performance.now();
-    const jpeg = await pixelsToJpeg(scanned, 0.85);
-    log(`jpeg in ${since(t)} — ${(jpeg.length / 1024).toFixed(0)}KB`);
+      t = performance.now();
+      const jpeg = await pixelsToJpeg(scanned, 0.85);
+      log(`jpeg in ${since(t)} — ${(jpeg.length / 1024).toFixed(0)}KB`);
 
-    const shown = pixelsToCanvas(scanned);
-    shown.style.maxWidth = '100%';
-    preview.appendChild(shown);
+      const shown = pixelsToCanvas(scanned);
+      shown.style.maxWidth = '100%';
+      preview.appendChild(shown);
 
-    const pdf = buildPdf([{ jpeg, width: scanned.width, height: scanned.height }]);
-    log(`pdf ${(pdf.length / 1024).toFixed(0)}KB`);
+      const pdf = buildPdf([{ jpeg, width: scanned.width, height: scanned.height }]);
+      log(`pdf ${(pdf.length / 1024).toFixed(0)}KB`);
 
-    const file = new File([pdf], 'flatpage-pipeline.pdf', { type: 'application/pdf' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(file);
-    a.download = file.name;
-    a.textContent = 'download the PDF';
-    preview.appendChild(a);
+      const file = new File([pdf], 'flatpage-pipeline.pdf', { type: 'application/pdf' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(file);
+      a.download = file.name;
+      a.textContent = 'download the PDF';
+      preview.appendChild(a);
+    } finally {
+      photo.revoke();
+    }
   } catch (err) {
     log('FAILED: ' + err.message);
   }

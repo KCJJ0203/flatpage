@@ -35,6 +35,11 @@ export function pickPhoto() {
       }
     }, { once: true });
 
+    input.addEventListener('cancel', () => {
+      input.remove();
+      reject(new Error('no photo taken'));
+    }, { once: true });
+
     input.click();
   });
 }
