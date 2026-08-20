@@ -39,6 +39,9 @@ export function createDocument() {
       assertIndex(index);
       pages.splice(index, 1);
     },
+    // Retained for a possible future reorder feature; unused in v1 since
+    // drag-to-reorder was deliberately dropped (see ui/pagestrip.js). Not
+    // dead code — kept intentionally, with its tests, for that future use.
     movePage(from, to) {
       assertIndex(from);
       assertIndex(to);

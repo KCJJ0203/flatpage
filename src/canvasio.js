@@ -20,7 +20,13 @@ export function imageToPixels(img, maxWidth = Infinity) {
   canvas.height = height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, width, height);
-  return ctx.getImageData(0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height);
+  // Release the backing store now that the pixels are read out, the same as
+  // pixelsToJpeg below — otherwise every crop/flatten pass leaves an
+  // unreleased canvas behind it.
+  canvas.width = 0;
+  canvas.height = 0;
+  return pixels;
 }
 
 export function pixelsToCanvas(pixels) {

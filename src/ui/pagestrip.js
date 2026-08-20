@@ -1,6 +1,8 @@
 /**
- * The thumbnail strip along the bottom: tap a thumbnail to re-edit its page,
- * tap its delete button to remove it.
+ * The thumbnail strip along the bottom: tap a thumbnail's delete button to
+ * remove it. Tapping the thumbnail itself reopens the camera and replaces
+ * that page outright — a stored page keeps no source photo or quad, so
+ * there is nothing to re-edit; it's a re-shoot, not a re-crop.
  *
  * Reordering by drag is deliberately left out of v1 — delete and re-shoot
  * covers the case, and a drag-to-reorder gesture fights the corner editor's

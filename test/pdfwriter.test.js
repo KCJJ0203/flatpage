@@ -107,6 +107,48 @@ test('rejects a page missing its dimensions', () => {
   assert.throws(() => buildPdf([{ jpeg: fakeJpeg(), width: 0, height: 10 }]), /dimensions/i);
 });
 
+// --- fit: fixed paper size (A4 in points), image letterboxed inside it -----
+
+test('fit: a page wider than it is tall gets the fixed MediaBox, letterboxed top/bottom', () => {
+  // 1000 x 500 px into 595 x 842pt: scale is capped by width (595/1000 = 0.595),
+  // so the image draws at 595.00 x 297.50pt, centred with 272.25pt of margin
+  // top and bottom and none left/right.
+  const pdf = buildPdf([page(1000, 500)], { fit: { width: 595, height: 842 } });
+  const s = latin1(pdf);
+  assert.match(s, /\/MediaBox \[0 0 595\.00 842\.00\]/);
+  assert.match(s, /595\.00 0 0 297\.50 0\.00 272\.25 cm/);
+});
+
+test('fit: a page taller than it is wide gets the fixed MediaBox, letterboxed left/right', () => {
+  // 500 x 1000 px into 595 x 842pt: scale is capped by height (842/1000 = 0.842),
+  // so the image draws at 421.00 x 842.00pt, centred with 87.00pt of margin
+  // left and right and none top/bottom.
+  const pdf = buildPdf([page(500, 1000)], { fit: { width: 595, height: 842 } });
+  const s = latin1(pdf);
+  assert.match(s, /\/MediaBox \[0 0 595\.00 842\.00\]/);
+  assert.match(s, /421\.00 0 0 842\.00 87\.00 0\.00 cm/);
+});
+
+test('fit: pages of different pixel dimensions in one document get identical MediaBoxes', () => {
+  const pdf = buildPdf(
+    [page(1000, 500), page(500, 1000), page(200, 200)],
+    { fit: { width: 595, height: 842 } },
+  );
+  const s = latin1(pdf);
+  const boxes = [...s.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)];
+  assert.equal(boxes.length, 3, 'expected one MediaBox per page');
+  for (const box of boxes) {
+    assert.equal(box[1], '595.00');
+    assert.equal(box[2], '842.00');
+  }
+});
+
+test('without fit, behaviour is exactly the DPI-derived page size as before', () => {
+  const pdf = buildPdf([page(600, 900)], { dpi: 300 });
+  assert.match(latin1(pdf), /\/MediaBox \[0 0 144\.00 216\.00\]/);
+  assert.match(latin1(pdf), /144\.00 0 0 216\.00 0 0 cm/);
+});
+
 /**
  * A genuine minimal 8x8 3-component YCbCr JPEG.
  * Built by hand from the JPEG spec: SOI, APP0, DQT, SOF0, DHT (DC/AC), SOS, scan data, EOI.

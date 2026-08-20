@@ -117,4 +117,9 @@ button:disabled { opacity: .4; }
   font-size: 1.05rem;
 }
 
+/* An author rule with ID specificity beats the [hidden] user-agent rule, so
+   without this the overlay stays painted (and swallows every tap) from first
+   load onward. This restores `hidden` as the switch setBusy() expects. */
+#busy[hidden] { display: none; }
+
 .hint { color: var(--muted); font-size: .9rem; }

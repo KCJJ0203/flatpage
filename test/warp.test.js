@@ -59,7 +59,7 @@ test('round trip: a perspective-distorted page warps back to the original', () =
   // Inset by 3 to exclude the block boundaries and the quad's own edge, where
   // resampling legitimately blends neighbouring colours.
   const err = meanAbsDiff(out, source, { inset: 3 });
-  assert.ok(err < 12, `recovered image should closely match the original, mean abs diff was ${err}`);
+  assert.ok(err < 0.5, `recovered image should closely match the original, mean abs diff was ${err}`);
 });
 
 test('round trip preserves orientation — corners are not flipped', () => {

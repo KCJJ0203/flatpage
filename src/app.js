@@ -21,6 +21,11 @@ let editor = null;        // the live corner editor
 let flattened = null;     // pixels of the flattened page, pre-mode
 let mode = 'scan';
 let editingIndex = -1;    // -1 = adding a new page, otherwise replacing this one
+// The mode-applied pixels renderPreview most recently produced for
+// `flattened`, so commitPage can reuse them instead of recomputing. Must be
+// cleared every time `flattened` is discarded or replaced so a stale result
+// can never be committed under a new page.
+let modeCache = null;     // { mode, pixels } | null
 
 const show = (name) => {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
@@ -65,6 +70,7 @@ async function flatten() {
     let pixels = imageToPixels(photo.bitmap, Infinity);
     const size = outputSizeFor(quad);
     flattened = warpQuadToRect(pixels, quad, size.width, size.height);
+    modeCache = null; // a freshly flattened page invalidates any prior cache
     // Release the full-resolution decoded buffer immediately — roughly 48MB
     // for a 12MP photo — rather than holding it until the function returns.
     pixels = null;
@@ -72,7 +78,7 @@ async function flatten() {
     photo = null;
     editor.destroy();
     editor = null;
-    renderPreview();
+    await renderPreview();
     show('review');
   } catch (err) {
     // Same cleanup as crop-cancel: an error mid-crop must not strand the
@@ -90,17 +96,43 @@ async function flatten() {
 
 // --- review ---------------------------------------------------------------
 
-function renderPreview() {
-  const host = document.getElementById('review-preview');
-  const shown = applyMode(flattened, mode);
-  host.replaceChildren(pixelsToCanvas(shown));
+async function renderPreview() {
+  setBusy('Rendering');
+  // Same double-frame yield as the other long operations, so the busy
+  // overlay actually paints before binarising millions of pixels blocks the
+  // main thread.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try {
+    const shown = modeCache && modeCache.mode === mode
+      ? modeCache.pixels
+      : applyMode(flattened, mode);
+    modeCache = { mode, pixels: shown };
+
+    const host = document.getElementById('review-preview');
+    // replaceChildren detaches the previous canvas without releasing its
+    // backing store; zero it first, the same way pixelsToJpeg and
+    // imageToPixels release theirs.
+    const previous = host.querySelector('canvas');
+    if (previous) {
+      previous.width = 0;
+      previous.height = 0;
+    }
+    host.replaceChildren(pixelsToCanvas(shown));
+  } finally {
+    setBusy(null);
+  }
 }
 
 async function commitPage() {
   setBusy('Saving page');
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
-    const shown = applyMode(flattened, mode);
+    // Reuse the pixels renderPreview already computed for the current mode
+    // rather than recomputing the (possibly expensive) binarisation; only
+    // fall back to recomputing if there is no cached result to reuse.
+    const shown = modeCache && modeCache.mode === mode
+      ? modeCache.pixels
+      : applyMode(flattened, mode);
     const jpeg = await pixelsToJpeg(shown, 0.85);
 
     const thumbScale = Math.min(1, 240 / shown.width);
@@ -124,10 +156,17 @@ async function commitPage() {
     else doc.addPage(page);
 
     flattened = null;
+    modeCache = null;
     editingIndex = -1;
     await saveSession(doc.pages());
     refreshHome();
     show('home');
+  } catch (err) {
+    // canvas.toBlob can yield null under iOS memory pressure, among other
+    // failure modes; without this the busy overlay would just clear with no
+    // sign anything went wrong, and the page would silently not be saved.
+    // Leave the user on the review screen so they can retry or discard.
+    alert('Could not save that page: ' + err.message);
   } finally {
     setBusy(null);
   }
@@ -165,11 +204,19 @@ async function doExport() {
     const result = await exportPdf(doc.pages(), chosen || suggested);
     // Dismissing the share sheet resolves the same promise as a completed
     // share; only clear the document when the export actually completed, so
-    // cancelling never loses the scanned pages.
+    // cancelling never loses the scanned pages. A download's completion can
+    // never be observed (see export.js), so it is never treated as proof the
+    // PDF was actually saved either — the pages are kept either way.
     if (result.completed) {
       doc.clear();
       await clearSession();
       refreshHome();
+    } else if (result.method === 'download') {
+      alert(
+        'Your PDF was handed to the browser to download. Your pages have ' +
+        'been kept — once you’ve confirmed the file arrived, you can ' +
+        'tap Discard all.'
+      );
     }
   } catch (err) {
     alert('Export failed: ' + err.message);
@@ -199,6 +246,7 @@ document.getElementById('crop-cancel').addEventListener('click', () => {
 });
 document.getElementById('review-back').addEventListener('click', () => {
   flattened = null;
+  modeCache = null;
   editingIndex = -1;
   show('home');
 });
@@ -219,7 +267,19 @@ for (const button of document.querySelectorAll('[data-mode]')) {
 // Recover an in-progress document if iOS reloaded the page underneath us.
 (async () => {
   const restored = await loadSession();
-  if (restored.length) doc.restore(restored);
+  if (restored.length) {
+    try {
+      doc.restore(restored);
+    } catch (err) {
+      // document.js throws on a malformed page by design; a single corrupt
+      // stored record must not brick every future launch. Warn, wipe the
+      // record so the failure can't repeat, and fall through to a normal
+      // empty-document startup.
+      console.warn('stored session was malformed, discarding it:', err);
+      doc.clear();
+      await clearSession();
+    }
+  }
   refreshHome();
   show('home');
 })();

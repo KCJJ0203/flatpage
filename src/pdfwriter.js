@@ -33,6 +33,7 @@ export function buildPdf(pages, options = {}) {
   }
 
   const dpi = options.dpi ?? 300;
+  const fit = options.fit ?? null;
   const chunks = [];
   let length = 0;
 
@@ -67,16 +68,36 @@ export function buildPdf(pages, options = {}) {
     const contentNum = pageNum + 1;
     const imageNum = pageNum + 2;
 
-    const wPt = (p.width / dpi * 72).toFixed(2);
-    const hPt = (p.height / dpi * 72).toFixed(2);
+    let pageWPt, pageHPt, cm;
+    if (fit) {
+      // Fixed paper size: scale the image to fit inside it while preserving
+      // its aspect ratio (never stretched, never cropped), then centre it —
+      // the untouched dimension is letterboxed rather than filled.
+      pageWPt = fit.width;
+      pageHPt = fit.height;
+      const scale = Math.min(fit.width / p.width, fit.height / p.height);
+      const drawW = p.width * scale;
+      const drawH = p.height * scale;
+      const tx = (fit.width - drawW) / 2;
+      const ty = (fit.height - drawH) / 2;
+      cm = `${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${tx.toFixed(2)} ${ty.toFixed(2)}`;
+    } else {
+      // No fixed size requested: derive the page size from the pixel
+      // dimensions at the given DPI, and paint the image across it fully.
+      pageWPt = p.width / dpi * 72;
+      pageHPt = p.height / dpi * 72;
+      cm = `${pageWPt.toFixed(2)} 0 0 ${pageHPt.toFixed(2)} 0 0`;
+    }
+    const wPt = pageWPt.toFixed(2);
+    const hPt = pageHPt.toFixed(2);
 
     beginObject(pageNum);
     push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${wPt} ${hPt}] ` +
       `/Resources << /XObject << /Im0 ${imageNum} 0 R >> >> /Contents ${contentNum} 0 R >>\n`);
     endObject();
 
-    // Scale the unit image square up to the page box, then paint it.
-    const stream = `q\n${wPt} 0 0 ${hPt} 0 0 cm\n/Im0 Do\nQ`;
+    // Scale (and, when fitting, centre) the unit image square onto the page.
+    const stream = `q\n${cm} cm\n/Im0 Do\nQ`;
     beginObject(contentNum);
     push(`<< /Length ${stream.length} >>\nstream\n`);
     push(stream);
