@@ -56,9 +56,10 @@ async function startScan(replaceIndex = -1) {
 
 async function flatten() {
   setBusy('Flattening');
-  // Yield once so the browser paints the busy state before the main thread
-  // disappears into the warp for a second or two.
-  await new Promise((r) => setTimeout(r, 0));
+  // Yield across two animation frames so the browser paints the busy state
+  // before the main thread disappears into the warp for a second or two.
+  // A zero-delay setTimeout is not guaranteed to flush a paint first.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     const quad = editor.getQuad();
     let pixels = imageToPixels(photo.bitmap, Infinity);
@@ -74,6 +75,12 @@ async function flatten() {
     renderPreview();
     show('review');
   } catch (err) {
+    // Same cleanup as crop-cancel: an error mid-crop must not strand the
+    // decoded photo or leave a stale editor attached to the canvas.
+    photo?.revoke();
+    photo = null;
+    editor?.destroy();
+    editor = null;
     alert('Could not flatten that page: ' + err.message);
     show('home');
   } finally {
@@ -91,7 +98,7 @@ function renderPreview() {
 
 async function commitPage() {
   setBusy('Saving page');
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     const shown = applyMode(flattened, mode);
     const jpeg = await pixelsToJpeg(shown, 0.85);
@@ -138,8 +145,12 @@ function refreshHome() {
     onSelect: (index) => startScan(index),
     onDelete: async (index) => {
       doc.removePage(index);
-      await saveSession(doc.pages());
+      // Rebuild the strip (and its index closures) before awaiting anything,
+      // so a fast second tap during the IndexedDB round trip below can't hit
+      // a click handler still bound to the pre-delete indices. Persisting
+      // afterwards is fine — it's insurance, not the source of truth.
       refreshHome();
+      await saveSession(doc.pages());
     },
   });
 }
@@ -149,12 +160,17 @@ async function doExport() {
   const chosen = prompt('File name', suggested);
   if (chosen === null) return;
   setBusy('Building PDF');
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
-    await exportPdf(doc.pages(), chosen || suggested);
-    doc.clear();
-    await clearSession();
-    refreshHome();
+    const result = await exportPdf(doc.pages(), chosen || suggested);
+    // Dismissing the share sheet resolves the same promise as a completed
+    // share; only clear the document when the export actually completed, so
+    // cancelling never loses the scanned pages.
+    if (result.completed) {
+      doc.clear();
+      await clearSession();
+      refreshHome();
+    }
   } catch (err) {
     alert('Export failed: ' + err.message);
   } finally {
@@ -178,10 +194,12 @@ document.getElementById('crop-cancel').addEventListener('click', () => {
   photo = null;
   editor?.destroy();
   editor = null;
+  editingIndex = -1;
   show('home');
 });
 document.getElementById('review-back').addEventListener('click', () => {
   flattened = null;
+  editingIndex = -1;
   show('home');
 });
 document.getElementById('keep').addEventListener('click', commitPage);

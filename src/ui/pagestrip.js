@@ -1,5 +1,6 @@
 /**
- * The thumbnail strip along the bottom: tap to re-edit, long-press to delete.
+ * The thumbnail strip along the bottom: tap a thumbnail to re-edit its page,
+ * tap its delete button to remove it.
  *
  * Reordering by drag is deliberately left out of v1 — delete and re-shoot
  * covers the case, and a drag-to-reorder gesture fights the corner editor's

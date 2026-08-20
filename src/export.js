@@ -42,11 +42,11 @@ export async function exportPdf(pages, filename) {
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: name });
-      return { method: 'share' };
+      return { method: 'share', completed: true };
     } catch (err) {
       // A user tapping Cancel is not a failure and must not trigger a
       // surprise download on top of the sheet they just dismissed.
-      if (err.name === 'AbortError') return { method: 'share' };
+      if (err.name === 'AbortError') return { method: 'share', completed: false };
       console.warn('share failed, falling back to download:', err);
     }
   }
@@ -59,5 +59,5 @@ export async function exportPdf(pages, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  return { method: 'download' };
+  return { method: 'download', completed: true };
 }
