@@ -9,23 +9,22 @@ const quad = (...pts) => pts.map(([x, y]) => ({ x, y }));
 /**
  * Render `source` into a larger photo so that its rectangle occupies `q`.
  *
- * This deliberately does NOT use warpQuadToRect — it splats forward through
- * geometry.js instead, so the test cannot be satisfied by warp.js simply being
- * self-consistent. Source pixels are supersampled 3x so the splat leaves no
- * holes when the quad is larger than the source.
+ * This deliberately does NOT use warpQuadToRect — it uses inverse rendering
+ * through geometry.js instead, so the test cannot be satisfied by warp.js
+ * simply being self-consistent. For each photo pixel, we pull from the source.
  */
 function renderInto(photoW, photoH, source, q) {
   const photo = blank(photoW, photoH, [30, 30, 30]);
   const rect = quad([0, 0], [source.width, 0], [source.width, source.height], [0, source.height]);
-  const h = solveHomography(rect, q);
-  const S = 3;
-  for (let sy = 0; sy < source.height * S; sy++) {
-    for (let sx = 0; sx < source.width * S; sx++) {
-      const p = applyHomography(h, sx / S, sy / S);
-      const px = Math.round(p.x);
-      const py = Math.round(p.y);
-      if (px < 0 || py < 0 || px >= photoW || py >= photoH) continue;
-      setPixel(photo, px, py, getPixel(source, Math.floor(sx / S), Math.floor(sy / S)));
+  const h = solveHomography(q, rect);
+  for (let y = 0; y < photoH; y++) {
+    for (let x = 0; x < photoW; x++) {
+      const p = applyHomography(h, x, y);
+      const sx = Math.floor(p.x);
+      const sy = Math.floor(p.y);
+      if (sx >= 0 && sy >= 0 && sx < source.width && sy < source.height) {
+        setPixel(photo, x, y, getPixel(source, sx, sy));
+      }
     }
   }
   return photo;
@@ -72,7 +71,8 @@ test('round trip preserves orientation — corners are not flipped', () => {
   const dominant = ([r, g, b]) => (r > 150 && g < 100 ? 'red'
     : g > 120 && r < 100 ? 'green'
     : b > 150 ? 'blue'
-    : 'yellow');
+    : r > 150 && g > 150 && b < 100 ? 'yellow'
+    : 'unclassified');
 
   assert.equal(dominant(getPixel(out, 20, 15)), 'red');
   assert.equal(dominant(getPixel(out, 60, 15)), 'green');
