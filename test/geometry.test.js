@@ -90,3 +90,33 @@ test('outputSizeFor never returns a zero dimension', () => {
   assert.ok(size.width >= 1 && size.height >= 1);
   assert.ok(Number.isInteger(size.width) && Number.isInteger(size.height));
 });
+
+test('sliver source quad at photo scale throws', () => {
+  // A very thin sliver: 2000 wide, 1e-8 tall. This must throw because the
+  // scale-relative threshold (or residual check) catches ill-conditioned solves.
+  const src = quad([0, 0], [2000, 0], [2000, 1e-8], [0, 1e-8]);
+  const dst = quad([10, 20], [30, 20], [30, 60], [10, 60]);
+  assert.throws(() => solveHomography(src, dst), /degenerate|singular/i);
+});
+
+test('three collinear corners throws', () => {
+  // Three corners are collinear: [0,0], [10,0], and [20,0] all on the x-axis.
+  // The fourth corner [20,10] is off the line, but the quad is degenerate.
+  const src = quad([0, 0], [10, 0], [20, 0], [20, 10]);
+  const dst = quad([5, 5], [15, 5], [25, 5], [25, 15]);
+  assert.throws(() => solveHomography(src, dst), /degenerate|singular/i);
+});
+
+test('legitimate photo-scale perspective quad does not throw and corners map exactly', () => {
+  // A strongly perspective-distorted rectangle at photo scale: 3000 wide, 4000 tall.
+  // This is a valid quad despite severe perspective distortion.
+  const src = quad([0, 0], [3000, 0], [3000, 4000], [0, 4000]);
+  const dst = quad([120, 300], [2760, 610], [2400, 3810], [400, 3500]);
+  const h = solveHomography(src, dst);
+  // Verify all four corners land on their targets within 1e-6.
+  src.forEach((s, i) => {
+    const p = applyHomography(h, s.x, s.y);
+    near(p.x, dst[i].x, 1e-6);
+    near(p.y, dst[i].y, 1e-6);
+  });
+});

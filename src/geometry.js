@@ -17,12 +17,23 @@
  */
 function solveLinearSystem(A, b) {
   const n = b.length;
+
+  // Compute the largest absolute entry in A for scale-relative singularity testing.
+  let maxAbsEntry = 0;
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      maxAbsEntry = Math.max(maxAbsEntry, Math.abs(A[i][j]));
+    }
+  }
+  // Guard against all-zero matrix: if the scale is zero, treat any zero pivot as singular.
+  const threshold = Math.max(1e-10, maxAbsEntry * 1e-12);
+
   for (let col = 0; col < n; col++) {
     let pivot = col;
     for (let r = col + 1; r < n; r++) {
       if (Math.abs(A[r][col]) > Math.abs(A[pivot][col])) pivot = r;
     }
-    if (Math.abs(A[pivot][col]) < 1e-10) {
+    if (Math.abs(A[pivot][col]) < threshold) {
       throw new Error('degenerate quad: the linear system is singular');
     }
     if (pivot !== col) {
@@ -74,6 +85,26 @@ export function solveHomography(srcQuad, dstQuad) {
   if (!m.every(Number.isFinite)) {
     throw new Error('degenerate quad: solution is not finite');
   }
+
+  // Residual check: verify the solution actually maps the corners to their targets.
+  // Compute the magnitude scale of the destination quad.
+  let maxDstCoord = 0;
+  for (const { x, y } of dstQuad) {
+    maxDstCoord = Math.max(maxDstCoord, Math.abs(x), Math.abs(y));
+  }
+  // Guard against a degenerate destination: even if dstQuad is at origin, fail gracefully.
+  const tolerance = Math.max(1e-6, 1e-6 * maxDstCoord);
+
+  let maxError = 0;
+  for (let i = 0; i < 4; i++) {
+    const mapped = applyHomography(m, srcQuad[i].x, srcQuad[i].y);
+    const err = Math.hypot(mapped.x - dstQuad[i].x, mapped.y - dstQuad[i].y);
+    maxError = Math.max(maxError, err);
+  }
+  if (maxError > tolerance) {
+    throw new Error('degenerate quad: the linear system is singular');
+  }
+
   return m;
 }
 
