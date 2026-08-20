@@ -3,20 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12151a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flatpage">
 <title>Flatpage</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 1.25rem; }
-  button { width: 100%; padding: 1rem; font-size: 1rem; border-radius: .5rem;
-    border: 1px solid #888; background: #fff; }
-  #out { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
-</style>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="src/styles.css">
+<link rel="stylesheet" href="src/ui/corners.css">
 </head>
 <body>
-<h1>Flatpage</h1>
-<p>Pipeline check: photo in, flattened B&amp;W PDF out, on a fixed 10% inset crop.</p>
-<button id="go">Scan a page</button>
-<div id="out"></div>
-<div id="preview"></div>
-<script type="module" src="src/pipeline-check.js"></script>
+
+<header>
+  <h1>Flatpage</h1>
+  <span>on your device only</span>
+</header>
+
+<main>
+  <section id="screen-home">
+    <button id="scan" class="primary" type="button">Scan a page</button>
+    <p class="hint" id="page-count">No pages yet</p>
+    <div id="page-strip"></div>
+    <div class="row">
+      <button id="export" type="button" disabled>Export PDF</button>
+      <button id="discard" type="button" hidden>Discard all</button>
+    </div>
+  </section>
+
+  <section id="screen-crop" hidden>
+    <p class="hint">Drag the corners to the edges of the page.</p>
+    <div class="editor"><canvas id="crop-canvas"></canvas></div>
+    <div class="row">
+      <button id="crop-cancel" type="button">Cancel</button>
+      <button id="flatten" class="primary" type="button">Flatten</button>
+    </div>
+  </section>
+
+  <section id="screen-review" hidden>
+    <div class="modes">
+      <button type="button" data-mode="original">Original</button>
+      <button type="button" data-mode="grey">Grey</button>
+      <button type="button" data-mode="scan" class="selected">Scan</button>
+      <button type="button" data-mode="colour">Colour</button>
+    </div>
+    <div id="review-preview"></div>
+    <div class="row">
+      <button id="review-back" type="button">Discard</button>
+      <button id="keep" class="primary" type="button">Keep page</button>
+    </div>
+  </section>
+</main>
+
+<div id="busy" hidden><span id="busy-text"></span></div>
+
+<script type="module" src="src/app.js"></script>
 </body>
 </html>

@@ -1,0 +1,120 @@
+:root {
+  --bg: #12151a;
+  --surface: #1c2028;
+  --line: #2e343f;
+  --text: #eef1f5;
+  --muted: #98a2b3;
+  --accent: #3ddc84;
+  --accent-ink: #06301b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  /* Keep content clear of the notch and the home indicator. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-text-size-adjust: 100%;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  padding: 1rem 1.25rem .25rem;
+}
+
+h1 { font-size: 1.35rem; margin: 0; letter-spacing: -0.01em; }
+header span { color: var(--muted); font-size: .85rem; }
+
+main { padding: 1rem 1.25rem 6rem; }
+
+button {
+  font: inherit;
+  border-radius: .75rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  padding: .85rem 1rem;
+}
+
+button:disabled { opacity: .4; }
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+  width: 100%;
+  padding: 1.15rem;
+  font-size: 1.05rem;
+}
+
+.row { display: flex; gap: .6rem; margin-top: .75rem; }
+.row button { flex: 1; }
+
+.modes { display: flex; gap: .4rem; margin: .9rem 0; }
+.modes button { flex: 1; padding: .6rem .3rem; font-size: .85rem; }
+.modes button.selected { border-color: var(--accent); color: var(--accent); }
+
+#page-strip {
+  display: flex;
+  gap: .6rem;
+  overflow-x: auto;
+  padding: .75rem 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.page-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 84px;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  overflow: hidden;
+  background: #fff;
+}
+
+.page-thumb img { display: block; width: 100%; height: auto; }
+
+.page-number {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  background: rgba(0, 0, 0, .7);
+  color: #fff;
+  border-radius: .3rem;
+  padding: 0 .35rem;
+  font-size: .75rem;
+}
+
+.page-delete {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  line-height: 1;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .72);
+  border-color: transparent;
+  color: #fff;
+}
+
+#review-preview canvas { width: 100%; height: auto; border-radius: .5rem; background: #fff; }
+
+#busy {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 12, 16, .82);
+  font-size: 1.05rem;
+}
+
+.hint { color: var(--muted); font-size: .9rem; }
