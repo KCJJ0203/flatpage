@@ -64,7 +64,7 @@ export function meanAbsDiff(a, b, { inset = 0 } = {}) {
  * and dark strokes. Returns the image plus the exact set of stroke pixels so
  * tests can assert on recovery rather than on eyeballing.
  */
-export function syntheticPage(width, height, { shading = 90, ink = 45 } = {}) {
+export function syntheticPage(width, height, { shading = 90, ink = 45, strokeWidth = 3 } = {}) {
   const img = blank(width, height);
   const strokes = new Set();
 
@@ -89,11 +89,15 @@ export function syntheticPage(width, height, { shading = 90, ink = 45 } = {}) {
 
   // Three horizontal rules and two vertical ones, in both the bright and dim
   // halves, so a threshold that only works where the light is good fails.
-  stroke(10, 20, width - 20, 3);
-  stroke(10, Math.floor(height / 2), width - 20, 3);
-  stroke(10, height - 25, width - 20, 3);
-  stroke(25, 15, 3, height - 30);
-  stroke(width - 28, 15, 3, height - 30);
+  // Thicknesses and margins scale with strokeWidth (default 3, which
+  // reproduces the original fixture exactly) so a larger page gets
+  // proportionally larger strokes rather than hairlines.
+  const f = strokeWidth / 3;
+  stroke(Math.round(10 * f), Math.round(20 * f), width - Math.round(20 * f), Math.round(3 * f));
+  stroke(Math.round(10 * f), Math.floor(height / 2), width - Math.round(20 * f), Math.round(3 * f));
+  stroke(Math.round(10 * f), height - Math.round(25 * f), width - Math.round(20 * f), Math.round(3 * f));
+  stroke(Math.round(25 * f), Math.round(15 * f), Math.round(3 * f), height - Math.round(30 * f));
+  stroke(width - Math.round(28 * f), Math.round(15 * f), Math.round(3 * f), height - Math.round(30 * f));
 
   return { img, strokes };
 }

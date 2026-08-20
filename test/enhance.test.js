@@ -80,6 +80,47 @@ test('adaptiveThreshold recovers most stroke pixels and invents few', () => {
     `too much speckle: ${falsePositive} false black pixels against ${strokes.size} real ones`);
 });
 
+// This pins the shortEdge/20 branch of defaultWindow, which no other test in
+// this file exercises: every other fixture is 200px or less on the short
+// edge, so defaultWindow's floor of 15 always wins there and the scaling
+// formula is never actually run. At a realistic page size the formula is
+// load-bearing — a fixed small window is not wide enough to see past the
+// lighting gradient across a full page, so it under-recovers ink relative to
+// a window that scales with the page.
+test('adaptiveThreshold at page scale: the scaled window recovers strokes that a small fixed window misses', () => {
+  const width = 1200;
+  const height = 900;
+  // Strokes scaled up proportionally (6x, matching the 1200x900 : 200x150
+  // scale-up) so they read as page-scale ink rather than hairlines that
+  // would vanish under any window size.
+  const { img, strokes } = syntheticPage(width, height, { shading: 100, strokeWidth: 18 });
+
+  const recallOf = (out) => {
+    let hit = 0;
+    let falsePositive = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const isBlack = getPixel(out, x, y)[0] === 0;
+        const isStroke = strokes.has(y * width + x);
+        if (isStroke && isBlack) hit++;
+        if (!isStroke && isBlack) falsePositive++;
+      }
+    }
+    return { recall: hit / strokes.size, falsePositive };
+  };
+
+  const withDefaultWindow = recallOf(adaptiveThreshold(img));
+  assert.ok(withDefaultWindow.recall > 0.9,
+    `expected default (scaled) window to recover >90% of strokes, got ${(withDefaultWindow.recall * 100).toFixed(1)}%`);
+  assert.ok(withDefaultWindow.falsePositive < strokes.size * 0.35,
+    `too much speckle at default window: ${withDefaultWindow.falsePositive} false black pixels against ${strokes.size} real ones`);
+
+  const withFixedSmallWindow = recallOf(adaptiveThreshold(img, { windowSize: 15 }));
+  assert.ok(withFixedSmallWindow.recall < 0.8,
+    `expected a fixed windowSize:15 to be materially worse than the scaled default at page scale, ` +
+    `got ${(withFixedSmallWindow.recall * 100).toFixed(1)}% (default window scored ${(withDefaultWindow.recall * 100).toFixed(1)}%)`);
+});
+
 test('adaptiveThreshold does not speckle a blank page', () => {
   const img = blank(120, 120, [235, 235, 235]);
   const out = adaptiveThreshold(img);
