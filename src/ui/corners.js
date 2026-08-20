@@ -48,12 +48,13 @@ export function createCornerEditor({ canvas, image, quad, onChange }) {
   const ctx = canvas.getContext('2d');
   const imageWidth = image.naturalWidth || image.width;
   const imageHeight = image.naturalHeight || image.height;
+  const backingScale = Math.min(1, 1400 / Math.max(imageWidth, imageHeight));
   let corners = clampQuad(quad ?? defaultQuad(imageWidth, imageHeight), imageWidth, imageHeight);
   let dragging = -1;
   let pointerPosition = null;
 
-  canvas.width = imageWidth;
-  canvas.height = imageHeight;
+  canvas.width = Math.max(1, Math.round(imageWidth * backingScale));
+  canvas.height = Math.max(1, Math.round(imageHeight * backingScale));
 
   const toImageSpace = (event) => {
     const rect = canvas.getBoundingClientRect();
@@ -69,6 +70,7 @@ export function createCornerEditor({ canvas, image, quad, onChange }) {
 
   function draw() {
     const s = scaleFactor();
+    ctx.setTransform(backingScale, 0, 0, backingScale, 0, 0);
     ctx.clearRect(0, 0, imageWidth, imageHeight);
     ctx.drawImage(image, 0, 0, imageWidth, imageHeight);
 
