@@ -13,7 +13,16 @@ export function sanitiseFilename(name) {
     .trim();
   if (!out.replace(/[-\s.]/g, '')) return defaultFilename();
   if (!/\.pdf$/i.test(out)) out += '.pdf';
-  if (out.length > 100) out = out.slice(0, 96 - 4).trim() + '.pdf';
+  if (out.length > 100) {
+    out = out.slice(0, 96 - 4);
+    // Check if we've split a UTF-16 surrogate pair
+    const lastCode = out.charCodeAt(out.length - 1);
+    if (lastCode >= 0xD800 && lastCode <= 0xDBFF) {
+      // High surrogate without low - remove it
+      out = out.slice(0, -1);
+    }
+    out = out.trim() + '.pdf';
+  }
   return out;
 }
 
