@@ -19,7 +19,12 @@ const screens = {
 let photo = null;         // the decoded photo currently being cropped
 let editor = null;        // the live corner editor
 let flattened = null;     // pixels of the flattened page, pre-mode
-let mode = 'scan';
+// Colour is the default: it keeps the page recognisable and now flattens the
+// lighting, which suits printed slides, certificates and anything with colour
+// in it. Scan is bitonal, so it is the right tool for pencil on lined paper and
+// the wrong one for a document with grey tones. Must match the button carrying
+// `class="selected"` in index.html; a test asserts the two agree.
+let mode = 'colour';
 let editingIndex = -1;    // -1 = adding a new page, otherwise replacing this one
 // The mode-applied pixels renderPreview most recently produced for
 // `flattened`, so commitPage can reuse them instead of recomputing. Must be

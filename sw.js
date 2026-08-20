@@ -5,7 +5,7 @@
  * VERSION on any release and the whole shell is replaced atomically. Nothing
  * this worker touches is user data — scans never leave the page.
  */
-const VERSION = 'flatpage-v2';
+const VERSION = 'flatpage-v3';
 
 const SHELL = [
   '.',
