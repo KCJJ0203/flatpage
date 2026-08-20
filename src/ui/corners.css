@@ -1,0 +1,15 @@
+.editor {
+  position: relative;
+  width: 100%;
+  background: #111;
+}
+
+.editor canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Stop Safari panning or zooming the page while a corner is being dragged. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
