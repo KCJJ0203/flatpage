@@ -1,4 +1,4 @@
-import { pickPhoto } from './capture.js';
+import { pickPhoto, pickPhotos, decodeFile } from './capture.js';
 import { imageToPixels, pixelsToCanvas, pixelsToJpeg } from './canvasio.js';
 import { outputSizeFor } from './geometry.js';
 import { warpQuadToRect } from './warp.js';
@@ -7,6 +7,7 @@ import { detectPageQuad } from './detect.js';
 import { createCornerEditor, defaultQuad } from './ui/corners.js';
 import { renderPageStrip } from './ui/pagestrip.js';
 import { createDocument } from './document.js';
+import { createBatch } from './batch.js';
 import { saveSession, loadSession, clearSession } from './session.js';
 import { exportPdf, defaultFilename } from './export.js';
 
@@ -32,6 +33,10 @@ let editingIndex = -1;    // -1 = adding a new page, otherwise replacing this on
 // cleared every time `flattened` is discarded or replaced so a stale result
 // can never be committed under a new page.
 let modeCache = null;     // { mode, pixels } | null
+// The photos still waiting to be cropped. The camera path uses an empty batch,
+// so both routes share one flow and the single-page behaviour is unchanged.
+let batch = createBatch();
+let skipped = 0;          // photos in this batch that would not decode
 
 const show = (name) => {
   for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
@@ -69,14 +74,8 @@ function detectQuad() {
   }
 }
 
-async function startScan(replaceIndex = -1) {
-  editingIndex = replaceIndex;
-  try {
-    photo = await pickPhoto();
-  } catch (err) {
-    if (err.message !== 'no photo taken') alert(err.message);
-    return;
-  }
+/** Open the crop editor on whatever is currently in `photo`. */
+function openCropEditor() {
   const canvas = document.getElementById('crop-canvas');
   editor?.destroy();
   // Show the crop screen before creating the editor: the canvas needs a real
@@ -88,6 +87,88 @@ async function startScan(replaceIndex = -1) {
     image: photo.bitmap,
     quad: detectQuad(),
   });
+  updateBatchUi();
+}
+
+/** Reflect the batch position in the crop screen's wording. */
+function updateBatchUi() {
+  const label = batch.label();
+  document.getElementById('crop-progress').textContent = label ? `${label} — ` : '';
+  // "Skip" only makes sense when there is something to skip to.
+  document.getElementById('crop-cancel').textContent =
+    batch.remaining() > 0 ? 'Skip' : 'Cancel';
+}
+
+async function startScan(replaceIndex = -1) {
+  editingIndex = replaceIndex;
+  batch = createBatch();
+  skipped = 0;
+  try {
+    photo = await pickPhoto();
+  } catch (err) {
+    if (err.message !== 'no photo taken') alert(err.message);
+    return;
+  }
+  openCropEditor();
+}
+
+/** Pick several photos from the library and walk through them one at a time. */
+async function startImport() {
+  let files;
+  try {
+    files = await pickPhotos();
+  } catch (err) {
+    if (err.message !== 'no photos chosen') alert(err.message);
+    return;
+  }
+  editingIndex = -1;
+  skipped = 0;
+  batch = createBatch(files);
+  await advanceBatch();
+}
+
+/**
+ * Move to the next queued photo, or go home when the queue runs dry.
+ *
+ * A loop rather than recursion so a run of unreadable files cannot grow the
+ * stack, and so one bad photo costs its own page rather than the whole batch.
+ */
+async function advanceBatch() {
+  for (;;) {
+    const file = batch.next();
+    if (!file) {
+      finishBatch();
+      return;
+    }
+    setBusy('Opening photo');
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    try {
+      photo = await decodeFile(file);
+      setBusy(null);
+      openCropEditor();
+      return;
+    } catch {
+      setBusy(null);
+      skipped++;
+    }
+  }
+}
+
+function finishBatch() {
+  refreshHome();
+  show('home');
+  if (skipped > 0) {
+    alert(skipped === 1
+      ? 'One photo could not be opened and was skipped.'
+      : `${skipped} photos could not be opened and were skipped.`);
+    skipped = 0;
+  }
+}
+
+/** After a page is kept, discarded or skipped: continue the batch or go home. */
+async function afterPage() {
+  if (batch.remaining() > 0) await advanceBatch();
+  else finishBatch();
 }
 
 async function flatten() {
@@ -191,7 +272,7 @@ async function commitPage() {
     editingIndex = -1;
     await saveSession(doc.pages());
     refreshHome();
-    show('home');
+    await afterPage();
   } catch (err) {
     // canvas.toBlob can yield null under iOS memory pressure, among other
     // failure modes; without this the busy overlay would just clear with no
@@ -266,20 +347,23 @@ async function discardAll() {
 // --- wiring ---------------------------------------------------------------
 
 document.getElementById('scan').addEventListener('click', () => startScan(-1));
+document.getElementById('import').addEventListener('click', startImport);
 document.getElementById('flatten').addEventListener('click', flatten);
-document.getElementById('crop-cancel').addEventListener('click', () => {
+document.getElementById('crop-cancel').addEventListener('click', async () => {
   photo?.revoke();
   photo = null;
   editor?.destroy();
   editor = null;
   editingIndex = -1;
-  show('home');
+  // Mid-batch this button reads "Skip" and moves to the next photo; on its own
+  // it reads "Cancel" and goes home. Both are this one path.
+  await afterPage();
 });
-document.getElementById('review-back').addEventListener('click', () => {
+document.getElementById('review-back').addEventListener('click', async () => {
   flattened = null;
   modeCache = null;
   editingIndex = -1;
-  show('home');
+  await afterPage();
 });
 document.getElementById('keep').addEventListener('click', commitPage);
 document.getElementById('export').addEventListener('click', doExport);

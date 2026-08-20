@@ -26,6 +26,7 @@
 <main>
   <section id="screen-home">
     <button id="scan" class="primary" type="button">Scan a page</button>
+    <button id="import" type="button">Add photos</button>
     <p class="hint" id="page-count">No pages yet</p>
     <div id="page-strip"></div>
     <div class="row">
@@ -35,7 +36,7 @@
   </section>
 
   <section id="screen-crop" hidden>
-    <p class="hint">Drag the corners to the edges of the page.</p>
+    <p class="hint"><span id="crop-progress"></span>Drag the corners to the edges of the page.</p>
     <div class="editor"><canvas id="crop-canvas"></canvas></div>
     <div class="row">
       <button id="crop-cancel" type="button">Cancel</button>

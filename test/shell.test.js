@@ -45,3 +45,16 @@ test('the service worker caches every source file', () => {
   const missing = walk('src').map((f) => `src/${f}`).filter((f) => !shell.includes(`'${f}'`));
   assert.deepEqual(missing, [], `not cached by the service worker: ${missing.join(', ')}`);
 });
+
+// app.js wires every control by id at startup. A typo or a removed element
+// makes getElementById return null, the addEventListener on it throws, and the
+// module dies before anything renders -- so a missing id is not a broken
+// button, it is a blank app.
+test('every element app.js looks up by id exists in index.html', () => {
+  const html = read('index.html');
+  const ids = [...read('src/app.js').matchAll(/getElementById\('([^']+)'\)/g)]
+    .map((m) => m[1]);
+  assert.ok(ids.length > 5, `expected to find id lookups, found ${ids.length}`);
+  const missing = [...new Set(ids)].filter((id) => !html.includes(`id="${id}"`));
+  assert.deepEqual(missing, [], `app.js looks up ids that index.html does not define: ${missing}`);
+});
