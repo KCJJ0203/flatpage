@@ -40,21 +40,29 @@ function transact(db, mode, run) {
  * regardless rather than dying on a feature the user never asked for.
  */
 export async function saveSession(pages) {
+  let db;
   try {
-    const db = await openDb();
-    await transact(db, 'readwrite', (store) => store.put({ savedAt: Date.now(), pages }, KEY));
-    db.close();
+    db = await openDb();
+    try {
+      await transact(db, 'readwrite', (store) => store.put({ savedAt: Date.now(), pages }, KEY));
+    } finally {
+      if (db) db.close();
+    }
   } catch (err) {
     console.warn('session save failed, continuing without it:', err);
   }
 }
 
 export async function loadSession() {
+  let db;
   try {
-    const db = await openDb();
-    const record = await transact(db, 'readonly', (store) => store.get(KEY));
-    db.close();
-    return record?.pages ?? [];
+    db = await openDb();
+    try {
+      const record = await transact(db, 'readonly', (store) => store.get(KEY));
+      return record?.pages ?? [];
+    } finally {
+      if (db) db.close();
+    }
   } catch (err) {
     console.warn('session load failed:', err);
     return [];
@@ -62,10 +70,14 @@ export async function loadSession() {
 }
 
 export async function clearSession() {
+  let db;
   try {
-    const db = await openDb();
-    await transact(db, 'readwrite', (store) => store.delete(KEY));
-    db.close();
+    db = await openDb();
+    try {
+      await transact(db, 'readwrite', (store) => store.delete(KEY));
+    } finally {
+      if (db) db.close();
+    }
   } catch (err) {
     console.warn('session clear failed:', err);
   }

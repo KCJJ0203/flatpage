@@ -10,6 +10,12 @@ function assertPage(page) {
   if (!(page && page.jpeg && page.jpeg.length)) {
     throw new Error('a page needs jpeg bytes');
   }
+  if (!(page.jpeg instanceof Uint8Array)) {
+    throw new Error('a page jpeg must be Uint8Array');
+  }
+  if (page.thumbnail && !(page.thumbnail instanceof Uint8Array)) {
+    throw new Error('a page thumbnail must be Uint8Array');
+  }
   if (!(page.width > 0) || !(page.height > 0)) {
     throw new Error('a page needs positive dimensions');
   }
