@@ -140,8 +140,8 @@ const minimalJpeg = new Uint8Array([
   0x00, 0x08, 0x00, 0x08, // height=8, width=8
   0x03, // number of components (3 for YCbCr)
   0x01, 0x11, 0x00, // Y: ID=1, sampling=1:1, quant table=0
-  0x02, 0x11, 0x01, // Cb: ID=2, sampling=1:1, quant table=1
-  0x03, 0x11, 0x01, // Cr: ID=3, sampling=1:1, quant table=1
+  0x02, 0x11, 0x00, // Cb: ID=2, sampling=1:1, quant table=0
+  0x03, 0x11, 0x00, // Cr: ID=3, sampling=1:1, quant table=0
 
   // DHT (Huffman table, DC, table 0)
   0xFF, 0xC4, 0x00, 0x1F, 0x00,
@@ -167,8 +167,8 @@ const minimalJpeg = new Uint8Array([
   0xFF, 0xDA, 0x00, 0x0C,
   0x03, // number of components
   0x01, 0x00, // component 1: DC table 0, AC table 0
-  0x02, 0x11, // component 2: DC table 1, AC table 1
-  0x03, 0x11, // component 3: DC table 1, AC table 1
+  0x02, 0x00, // component 2: DC table 0, AC table 0
+  0x03, 0x00, // component 3: DC table 0, AC table 0
   0x00, 0x3F, 0x00, // Ss=0, Se=63, Ah=0, Al=0
 
   // Minimal scan data (entropy-encoded MCU data; use safe bytes that don't create markers)
@@ -179,18 +179,31 @@ const minimalJpeg = new Uint8Array([
 ]);
 
 /**
- * JPEG marker parser: walks the marker structure, reads SOF0 component count.
- * Returns { valid, componentCount, lastMarker }
+ * JPEG marker parser: walks the marker structure, reads SOF0 component count,
+ * and validates that all quantization and Huffman table references are actually defined.
+ * Returns { valid, componentCount, lastMarker, error }
  */
 function parseJpegMarkers(jpegBytes) {
   let pos = 0;
   let componentCount = null;
   let lastMarker = null;
   let foundSos = false;
+  let error = null;
+
+  // Track which quantization and Huffman tables are defined
+  const definedDqt = new Set();
+  const definedDhtDc = new Set();
+  const definedDhtAc = new Set();
+
+  // Components referenced in SOF0: map of { id: tableNumber }
+  const sofComponents = {};
+
+  // Components referenced in SOS: map of { id: { dc, ac } }
+  const sosComponents = {};
 
   // Check SOI
   if (jpegBytes[0] !== 0xFF || jpegBytes[1] !== 0xD8) {
-    return { valid: false, componentCount: null, lastMarker: 'SOI missing' };
+    return { valid: false, componentCount: null, lastMarker: 'SOI missing', error };
   }
   pos = 2;
 
@@ -202,7 +215,8 @@ function parseJpegMarkers(jpegBytes) {
         pos++;
         continue;
       }
-      return { valid: false, componentCount, lastMarker: `non-marker byte at ${pos}` };
+      error = `non-marker byte at ${pos}`;
+      return { valid: false, componentCount, lastMarker, error };
     }
     pos++;
 
@@ -219,7 +233,24 @@ function parseJpegMarkers(jpegBytes) {
 
     // EOI is the end
     if (marker === 0xD9) {
-      return { valid: true, componentCount, lastMarker };
+      // Final validation: check that all referenced tables are defined
+      for (const [id, qTable] of Object.entries(sofComponents)) {
+        if (!definedDqt.has(qTable)) {
+          error = `SOF0 component ${id} references undefined quantization table ${qTable}`;
+          return { valid: false, componentCount, lastMarker, error };
+        }
+      }
+      for (const [id, tables] of Object.entries(sosComponents)) {
+        if (!definedDhtDc.has(tables.dc)) {
+          error = `SOS component ${id} references undefined DC Huffman table ${tables.dc}`;
+          return { valid: false, componentCount, lastMarker, error };
+        }
+        if (!definedDhtAc.has(tables.ac)) {
+          error = `SOS component ${id} references undefined AC Huffman table ${tables.ac}`;
+          return { valid: false, componentCount, lastMarker, error };
+        }
+      }
+      return { valid: true, componentCount, lastMarker, error };
     }
 
     // Some markers have no length (RST, SOI, EOI)
@@ -229,45 +260,97 @@ function parseJpegMarkers(jpegBytes) {
 
     // Read marker length (big-endian)
     if (pos + 2 > jpegBytes.length) {
-      return { valid: false, componentCount, lastMarker: `truncated marker ${lastMarker}` };
+      error = `truncated marker ${lastMarker}`;
+      return { valid: false, componentCount, lastMarker, error };
     }
     const length = (jpegBytes[pos] << 8) | jpegBytes[pos + 1];
     pos += 2;
 
-    // Extract component count from SOF0
-    if (marker === 0xC0) {
-      if (pos + 6 > jpegBytes.length) {
-        return { valid: false, componentCount, lastMarker: 'SOF0 truncated' };
-      }
-      componentCount = jpegBytes[pos + 5]; // Nf is at offset 5 from marker length
+    // DQT: quantization table definition
+    if (marker === 0xDB) {
+      const pq = jpegBytes[pos] >> 4;     // precision (0=8-bit, 1=16-bit)
+      const tq = jpegBytes[pos] & 0x0F;   // table number
+      definedDqt.add(tq);
     }
 
-    // Track that we've seen SOS
+    // SOF0: frame header
+    if (marker === 0xC0) {
+      if (pos + 6 > jpegBytes.length) {
+        error = 'SOF0 truncated';
+        return { valid: false, componentCount, lastMarker, error };
+      }
+      const precision = jpegBytes[pos];
+      const height = (jpegBytes[pos + 1] << 8) | jpegBytes[pos + 2];
+      const width = (jpegBytes[pos + 3] << 8) | jpegBytes[pos + 4];
+      componentCount = jpegBytes[pos + 5]; // Nf
+
+      // Read component specifications
+      const componentDataStart = pos + 6;
+      for (let i = 0; i < componentCount; i++) {
+        if (componentDataStart + i * 3 + 2 >= jpegBytes.length) {
+          error = 'SOF0 component data truncated';
+          return { valid: false, componentCount, lastMarker, error };
+        }
+        const ci = jpegBytes[componentDataStart + i * 3];
+        const hi_vi = jpegBytes[componentDataStart + i * 3 + 1];
+        const tqi = jpegBytes[componentDataStart + i * 3 + 2];
+        sofComponents[ci] = tqi;
+      }
+    }
+
+    // DHT: Huffman table definition
+    if (marker === 0xC4) {
+      const tc = jpegBytes[pos] >> 4;     // table class (0=DC, 1=AC)
+      const th = jpegBytes[pos] & 0x0F;   // table number
+      if (tc === 0) {
+        definedDhtDc.add(th);
+      } else {
+        definedDhtAc.add(th);
+      }
+    }
+
+    // SOS: start of scan
     if (marker === 0xDA) {
       foundSos = true;
+      const ns = jpegBytes[pos];  // number of scan components
+      for (let i = 0; i < ns; i++) {
+        if (pos + 1 + i * 2 + 1 >= jpegBytes.length) {
+          error = 'SOS component data truncated';
+          return { valid: false, componentCount, lastMarker, error };
+        }
+        const cs = jpegBytes[pos + 1 + i * 2];       // component selector
+        const td_ta = jpegBytes[pos + 1 + i * 2 + 1]; // DC/AC table selectors
+        const td = td_ta >> 4;                        // DC table number
+        const ta = td_ta & 0x0F;                      // AC table number
+        sosComponents[cs] = { dc: td, ac: ta };
+      }
     }
 
     pos += length - 2; // length includes the 2 bytes of length itself
   }
 
-  return { valid: false, componentCount, lastMarker: 'unexpected end' };
+  error = 'unexpected end (no EOI found)';
+  return { valid: false, componentCount, lastMarker, error };
 }
 
 test('real JPEG survives PDF roundtrip byte-for-byte', () => {
   const pdf = buildPdf([{ jpeg: minimalJpeg, width: 100, height: 100 }]);
+  const s = latin1(pdf);
 
-  // Search for JPEG SOI marker (0xFF 0xD8) in the PDF bytes
-  let jpegStart = -1;
-  for (let i = 0; i < pdf.length - 1; i++) {
-    if (pdf[i] === 0xFF && pdf[i + 1] === 0xD8) {
-      jpegStart = i;
-      break;
-    }
-  }
-  assert.ok(jpegStart >= 0, 'JPEG SOI marker (0xFF 0xD8) not found in PDF');
+  // Locate the image XObject stream using PDF structure:
+  // Read the /Length field and find the byte offset of the stream keyword
+  const imageDeclMatch = s.match(/\/Filter \/DCTDecode[^>]*\/Length (\d+)/);
+  assert.ok(imageDeclMatch, 'could not find /Filter /DCTDecode in PDF');
+  const jpegLength = Number(imageDeclMatch[1]);
 
-  // Extract exactly minimalJpeg.length bytes starting from the SOI
-  const extractedJpeg = pdf.slice(jpegStart, jpegStart + minimalJpeg.length);
+  // Find the stream keyword byte position in the PDF
+  const imageDeclStart = s.indexOf(imageDeclMatch[0]);
+  const streamKeywordPos = s.indexOf('stream\n', imageDeclStart);
+  const streamDataStart = streamKeywordPos + 'stream\n'.length;
+
+  // Extract JPEG using the declared /Length and stream offset
+  // This proves the PDF's offset and length bookkeeping is correct
+  const extractedJpeg = pdf.slice(streamDataStart, streamDataStart + jpegLength);
 
   // Verify byte-for-byte identity
   assert.deepEqual(extractedJpeg, minimalJpeg, 'JPEG bytes do not match after roundtrip');
@@ -275,20 +358,25 @@ test('real JPEG survives PDF roundtrip byte-for-byte', () => {
 
 test('PDF JPEG marker sequence is valid and component count matches /DeviceRGB', () => {
   const pdf = buildPdf([{ jpeg: minimalJpeg, width: 100, height: 100 }]);
+  const s = latin1(pdf);
 
-  // Search for JPEG SOI marker (0xFF 0xD8)
-  let jpegStart = -1;
-  for (let i = 0; i < pdf.length - 1; i++) {
-    if (pdf[i] === 0xFF && pdf[i + 1] === 0xD8) {
-      jpegStart = i;
-      break;
-    }
-  }
-  const extractedJpeg = pdf.slice(jpegStart, jpegStart + minimalJpeg.length);
+  // Find the image XObject by locating the /Filter /DCTDecode pattern and reading /Length
+  const imageDeclMatch = s.match(/\/Filter \/DCTDecode[^>]*\/Length (\d+)/);
+  assert.ok(imageDeclMatch, 'could not find /Filter /DCTDecode in PDF');
+  const jpegLength = Number(imageDeclMatch[1]);
+
+  // Find the stream keyword after this /Length declaration
+  const imageDeclStart = s.indexOf(imageDeclMatch[0]);
+  const streamKeywordPos = s.indexOf('stream\n', imageDeclStart);
+  const streamDataStart = streamKeywordPos + 'stream\n'.length;
+
+  // Extract JPEG using the declared length and offset
+  const extractedJpeg = pdf.slice(streamDataStart, streamDataStart + jpegLength);
 
   // Parse markers
   const result = parseJpegMarkers(extractedJpeg);
-  assert.equal(result.valid, true, `JPEG marker structure invalid: ${result.lastMarker}`);
+  assert.equal(result.valid, true,
+    `JPEG marker structure invalid: ${result.error || result.lastMarker}`);
   assert.equal(result.componentCount, 3,
     `SOF0 component count is ${result.componentCount} (expected 3 to match /DeviceRGB)`);
 });
