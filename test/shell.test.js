@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const read = (name) => readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
 
@@ -28,4 +29,19 @@ test('exactly one mode button starts selected', () => {
 // has to move whenever the shell does. This catches the copy-paste case.
 test('the service worker declares a version', () => {
   assert.match(read('sw.js'), /^const VERSION = 'flatpage-v\d+';$/m);
+});
+
+// Every source file has to be listed in the service worker's SHELL. Miss one
+// and the app keeps working online, then breaks the first time it is opened
+// without a connection — the failure is invisible until it matters most.
+test('the service worker caches every source file', () => {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const walk = (dir, prefix = '') => readdirSync(root + dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory()
+      ? walk(`${dir}/${e.name}`, `${prefix}${e.name}/`)
+      : (/\.(js|css)$/.test(e.name) ? [`${prefix}${e.name}`] : [])));
+
+  const shell = read('sw.js');
+  const missing = walk('src').map((f) => `src/${f}`).filter((f) => !shell.includes(`'${f}'`));
+  assert.deepEqual(missing, [], `not cached by the service worker: ${missing.join(', ')}`);
 });

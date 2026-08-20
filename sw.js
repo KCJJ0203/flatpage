@@ -5,7 +5,7 @@
  * VERSION on any release and the whole shell is replaced atomically. Nothing
  * this worker touches is user data — scans never leave the page.
  */
-const VERSION = 'flatpage-v3';
+const VERSION = 'flatpage-v4';
 
 const SHELL = [
   '.',
@@ -19,6 +19,8 @@ const SHELL = [
   'src/geometry.js',
   'src/warp.js',
   'src/enhance.js',
+  'src/detect.js',
+
   'src/pdfwriter.js',
   'src/document.js',
   'src/session.js',

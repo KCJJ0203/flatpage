@@ -3,6 +3,7 @@ import { imageToPixels, pixelsToCanvas, pixelsToJpeg } from './canvasio.js';
 import { outputSizeFor } from './geometry.js';
 import { warpQuadToRect } from './warp.js';
 import { applyMode } from './enhance.js';
+import { detectPageQuad } from './detect.js';
 import { createCornerEditor, defaultQuad } from './ui/corners.js';
 import { renderPageStrip } from './ui/pagestrip.js';
 import { createDocument } from './document.js';
@@ -43,6 +44,31 @@ const setBusy = (message) => {
 
 // --- capture and crop ------------------------------------------------------
 
+/** Long edge, in pixels, that page detection runs at. */
+const DETECT_WIDTH = 400;
+
+/**
+ * Where to put the corners when the crop editor opens.
+ *
+ * Detection runs on a downscaled copy — a page edge is a huge feature, so 400px
+ * finds it just as well as 12MP would and costs a few milliseconds instead of a
+ * few seconds. A null result is the normal, expected outcome on a low-contrast
+ * capture, and simply means the user positions the corners themselves as before.
+ */
+function detectQuad() {
+  try {
+    const small = imageToPixels(photo.bitmap, DETECT_WIDTH);
+    const found = detectPageQuad(small);
+    if (!found) return defaultQuad(photo.width, photo.height);
+    const scale = photo.width / small.width;
+    return found.map((p) => ({ x: p.x * scale, y: p.y * scale }));
+  } catch {
+    // Detection is an optimisation. If anything about it fails the user must
+    // still get a working crop screen.
+    return defaultQuad(photo.width, photo.height);
+  }
+}
+
 async function startScan(replaceIndex = -1) {
   editingIndex = replaceIndex;
   try {
@@ -60,7 +86,7 @@ async function startScan(replaceIndex = -1) {
   editor = createCornerEditor({
     canvas,
     image: photo.bitmap,
-    quad: defaultQuad(photo.width, photo.height),
+    quad: detectQuad(),
   });
 }
 

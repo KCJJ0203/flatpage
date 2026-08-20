@@ -101,3 +101,40 @@ export function syntheticPage(width, height, { shading = 90, ink = 45, strokeWid
 
   return { img, strokes };
 }
+
+/** Signed area test used to render and to assert corner ordering. */
+const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+/** Is a point inside a convex quad given in consistent winding order? */
+export function insideQuad(quad, x, y) {
+  const p = { x, y };
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const c = cross(quad[i], quad[(i + 1) % 4], p);
+    if (c === 0) continue;
+    const s = c > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+}
+
+/**
+ * A synthetic photo of a page on a desk: a bright convex quad on a darker
+ * background, with a little per-pixel noise so nothing depends on the mask
+ * being perfectly clean. `quad` is [TL, TR, BR, BL] of {x, y}.
+ */
+export function pageOnDesk(width, height, quad, { paper = 235, desk = 90, noise = 6 } = {}) {
+  const img = blank(width, height);
+  // Deterministic pseudo-noise: a hash of the coordinates, so the fixture is
+  // identical on every run and a failure is always reproducible.
+  const jitter = (x, y) => ((x * 73856093) ^ (y * 19349663)) % (noise * 2 + 1) - noise;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const base = insideQuad(quad, x + 0.5, y + 0.5) ? paper : desk;
+      const v = Math.max(0, Math.min(255, base + (noise ? jitter(x, y) : 0)));
+      setPixel(img, x, y, [v, v, v]);
+    }
+  }
+  return img;
+}
