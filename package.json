@@ -1,0 +1,13 @@
+{
+  "name": "flatpage",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "On-device document scanner. No account, no cloud, no watermark.",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
