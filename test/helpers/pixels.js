@@ -57,3 +57,43 @@ export function meanAbsDiff(a, b, { inset = 0 } = {}) {
   }
   return sum / n;
 }
+
+/**
+ * A synthetic photographed page: white paper, an uneven lighting gradient
+ * (bright top-left falling away to the bottom-right, as a desk lamp does),
+ * and dark strokes. Returns the image plus the exact set of stroke pixels so
+ * tests can assert on recovery rather than on eyeballing.
+ */
+export function syntheticPage(width, height, { shading = 90, ink = 45 } = {}) {
+  const img = blank(width, height);
+  const strokes = new Set();
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const t = (x / width + y / height) / 2;          // 0 at top-left, 1 at bottom-right
+      const level = 255 - Math.round(shading * t);      // paper, unevenly lit
+      setPixel(img, x, y, [level, level, level]);
+    }
+  }
+
+  const stroke = (x0, y0, w, h) => {
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) {
+        if (x < 0 || y < 0 || x >= width || y >= height) continue;
+        const t = (x / width + y / height) / 2;
+        setPixel(img, x, y, [ink - Math.round(20 * t), ink - Math.round(20 * t), ink - Math.round(20 * t)]);
+        strokes.add(y * width + x);
+      }
+    }
+  };
+
+  // Three horizontal rules and two vertical ones, in both the bright and dim
+  // halves, so a threshold that only works where the light is good fails.
+  stroke(10, 20, width - 20, 3);
+  stroke(10, Math.floor(height / 2), width - 20, 3);
+  stroke(10, height - 25, width - 20, 3);
+  stroke(25, 15, 3, height - 30);
+  stroke(width - 28, 15, 3, height - 30);
+
+  return { img, strokes };
+}
