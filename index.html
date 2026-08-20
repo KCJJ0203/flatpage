@@ -4,9 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Flatpage</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 1.25rem; }
+  button { width: 100%; padding: 1rem; font-size: 1rem; border-radius: .5rem;
+    border: 1px solid #888; background: #fff; }
+  #out { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 13px; }
+</style>
 </head>
 <body>
 <h1>Flatpage</h1>
-<p>Under construction. <a href="spike/device-check.html">Device check</a></p>
+<p>Pipeline check: photo in, flattened B&amp;W PDF out, on a fixed 10% inset crop.</p>
+<button id="go">Scan a page</button>
+<div id="out"></div>
+<div id="preview"></div>
+<script type="module" src="src/pipeline-check.js"></script>
 </body>
 </html>
