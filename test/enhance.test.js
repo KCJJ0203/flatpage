@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toGreyscale, adaptiveThreshold, colourBoost, applyMode } from '../src/enhance.js';
-import { blank, colourChart, getPixel, setPixel, syntheticPage } from './helpers/pixels.js';
+import { toGreyscale, adaptiveThreshold, colourBoost, flattenIllumination, applyMode } from '../src/enhance.js';
+import { blank, colourChart, fillRect, getPixel, setPixel, syntheticPage } from './helpers/pixels.js';
 
 test('toGreyscale sets all three channels to the same luminance', () => {
   const img = colourChart(20, 20);
@@ -151,4 +151,79 @@ test('applyMode dispatches to the right transform', () => {
 
 test('applyMode rejects an unknown mode', () => {
   assert.throws(() => applyMode(colourChart(4, 4), 'sepia'), /unknown mode/i);
+});
+
+// --- illumination flattening ---------------------------------------------
+//
+// The defect these cover: a photographed page is lit unevenly, and a single
+// global scale per channel cannot correct a gradient. On the synthetic page
+// below colourBoost alone moves the corner-to-corner spread from 87 to 78 —
+// the page still reads dingy at the dim end.
+
+/** Rec. 601 luma at one pixel, for probing paper level away from any stroke. */
+const level = (img, x, y) => {
+  const i = (y * img.width + x) * 4;
+  return (img.data[i] * 299 + img.data[i + 1] * 587 + img.data[i + 2] * 114) / 1000;
+};
+
+/** Paper level at the four corners, which is where a gradient is most visible. */
+const cornerLevels = (img) => [
+  level(img, 5, 5),
+  level(img, img.width - 6, 5),
+  level(img, 5, img.height - 6),
+  level(img, img.width - 6, img.height - 6),
+].map(Math.round);
+
+test('flattenIllumination evens out a lighting gradient across the page', () => {
+  const { img } = syntheticPage(400, 300);
+  const before = cornerLevels(img);
+  assert.ok(Math.max(...before) - Math.min(...before) > 60,
+    `fixture must actually be unevenly lit, got ${before}`);
+
+  const after = cornerLevels(flattenIllumination(img));
+  const spread = Math.max(...after) - Math.min(...after);
+  assert.ok(spread <= 6, `corners should end up level, got ${after} (spread ${spread})`);
+  assert.ok(Math.min(...after) >= 245, `paper should read white, got ${after}`);
+});
+
+test('flattenIllumination keeps ink dark while lifting the paper', () => {
+  const { img, strokes } = syntheticPage(400, 300);
+  const out = flattenIllumination(img);
+  let lifted = 0;
+  for (const p of strokes) {
+    const x = p % img.width;
+    const y = (p - x) / img.width;
+    if (level(out, x, y) > 140) lifted++;
+  }
+  assert.ok(lifted / strokes.size < 0.02,
+    `ink must stay dark, ${lifted} of ${strokes.size} stroke pixels washed out`);
+});
+
+test('flattenIllumination caps its gain so a large dark region is not washed out', () => {
+  // A quarter-page black block drags the local background down. Without a gain
+  // cap the correction would divide it back up to white and erase it.
+  const img = blank(200, 200, [250, 250, 250]);
+  fillRect(img, 0, 0, 100, 100, [20, 20, 20]);
+  const out = flattenIllumination(img);
+  assert.ok(level(out, 50, 50) < 60,
+    `the black block must survive, got ${Math.round(level(out, 50, 50))}`);
+});
+
+test('flattenIllumination does not mutate its input', () => {
+  const { img } = syntheticPage(80, 60);
+  const before = getPixel(img, 40, 30);
+  flattenIllumination(img);
+  assert.deepEqual(getPixel(img, 40, 30), before);
+});
+
+test('colour mode flattens the lighting before boosting the paper', () => {
+  const { img } = syntheticPage(400, 300);
+  const after = cornerLevels(applyMode(img, 'colour'));
+  const spread = Math.max(...after) - Math.min(...after);
+  assert.ok(spread <= 6, `colour mode should not leave a gradient, got ${after} (spread ${spread})`);
+});
+
+test('original mode is left untouched by flattening', () => {
+  const { img } = syntheticPage(120, 90);
+  assert.deepEqual(cornerLevels(applyMode(img, 'original')), cornerLevels(img));
 });

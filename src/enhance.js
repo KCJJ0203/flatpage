@@ -140,12 +140,84 @@ export function colourBoost(image) {
   return out;
 }
 
+/**
+ * Estimate the background over a window a quarter of the short edge across.
+ * Ink covers only a few percent of a page, so a window that large is dominated
+ * by paper and tracks the lighting rather than the writing.
+ */
+function defaultBackgroundRadius(width, height) {
+  return Math.max(8, Math.round(Math.min(width, height) / 8));
+}
+
+/** Box mean of a single channel, via a summed-area table. */
+function boxMean(channel, width, height, radius) {
+  const w1 = width + 1;
+  const sum = new Float64Array(w1 * (height + 1));
+  for (let y = 0; y < height; y++) {
+    let rowSum = 0;
+    for (let x = 0; x < width; x++) {
+      rowSum += channel[y * width + x];
+      sum[(y + 1) * w1 + (x + 1)] = sum[y * w1 + (x + 1)] + rowSum;
+    }
+  }
+  const out = new Float64Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height, y + radius + 1);
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width, x + radius + 1);
+      out[y * width + x] = rectSum(sum, w1, x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0));
+    }
+  }
+  return out;
+}
+
+/**
+ * Flat-field correction: divide the page by its own local background.
+ *
+ * A photographed page is lit unevenly — a lamp on one side leaves the far
+ * corner dim, and the phone itself casts a shadow. A single global scale, which
+ * is all colourBoost can apply, moves the whole image together and so cannot
+ * flatten a gradient; it lifts the bright end to white and leaves the dim end
+ * grey. Dividing each pixel by the paper level measured around it removes the
+ * gradient instead of sliding it.
+ *
+ * The gain is capped because the background estimate is only trustworthy where
+ * paper dominates the window. Over a large dark region — a photograph, a solid
+ * block of fill — the estimate collapses towards the ink, and an uncapped
+ * division would divide that region back up to white and erase it. A cap of two
+ * is enough to rescue paper sitting at half brightness while bounding the damage
+ * anywhere the assumption fails.
+ */
+export function flattenIllumination(image, options = {}) {
+  const { width, height } = image;
+  const radius = options.radius ?? defaultBackgroundRadius(width, height);
+  const maxGain = options.maxGain ?? 2;
+
+  const out = clone(image);
+  const n = width * height;
+  const channel = new Float64Array(n);
+
+  for (let c = 0; c < 3; c++) {
+    for (let p = 0, i = c; p < n; p++, i += 4) channel[p] = image.data[i];
+    const background = boxMean(channel, width, height, radius);
+    for (let p = 0, i = c; p < n; p++, i += 4) {
+      out.data[i] = channel[p] * Math.min(maxGain, 255 / Math.max(1, background[p]));
+    }
+  }
+  return out;
+}
+
 export function applyMode(image, mode) {
   switch (mode) {
     case 'original': return clone(image);
     case 'grey': return toGreyscale(image);
     case 'scan': return adaptiveThreshold(image);
-    case 'colour': return colourBoost(image);
+    // Flatten first: colourBoost slides the whole image at once, so it needs a
+    // page that is already evenly lit. Scan needs no such help — Sauvola is
+    // local already, and measures identically with or without flattening.
+    case 'colour': return colourBoost(flattenIllumination(image));
     default: throw new Error(`unknown mode: ${mode}`);
   }
 }
