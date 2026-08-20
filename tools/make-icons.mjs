@@ -30,12 +30,19 @@ function render(size) {
       const inX = x >= m && x < m + w;
       const inY = y >= top && y < top + h;
       if (inX && inY) {
-        const cutCorner = (x - (m + w - fold)) + (y - top) > fold && y - top < fold;
+        // Corner-local coordinates for the top-right dog-ear, confined to
+        // the fold*fold square in that corner — nothing outside it is cut.
+        const fx = x - (m + w - fold);
+        const fy = y - top;
+        const inCorner = fx >= 0 && fx < fold && fy >= 0 && fy < fold;
+        const cutCorner = inCorner && fx + fy > fold;
         if (!cutCorner) {
-          const nearEdge =
-            x < m + stroke || x >= m + w - stroke ||
-            y < top + stroke || y >= top + h - stroke;
-          const nearFold = Math.abs((x - (m + w - fold)) + (y - top) - fold) < stroke;
+          const nearLeft = x < m + stroke;
+          const nearRight = x >= m + w - stroke && y >= top + fold;   // starts below the fold
+          const nearTop = y < top + stroke && x < m + w - fold;       // stops at the fold
+          const nearBottom = y >= top + h - stroke;
+          const nearEdge = nearLeft || nearRight || nearTop || nearBottom;
+          const nearFold = inCorner && Math.abs(fx + fy - fold) < stroke;
           colour = (nearEdge || nearFold) ? INK : BG;
         }
       }
