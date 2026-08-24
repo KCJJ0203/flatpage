@@ -292,6 +292,7 @@ function refreshHome() {
     count === 0 ? 'No pages yet' : count === 1 ? '1 page' : `${count} pages`;
   document.getElementById('export').disabled = count === 0;
   document.getElementById('discard').hidden = count === 0;
+  document.getElementById('ocr-option').hidden = count === 0;
   renderPageStrip(document.getElementById('page-strip'), doc.pages(), {
     onSelect: (index) => startScan(index),
     onDelete: async (index) => {
@@ -306,14 +307,58 @@ function refreshHome() {
   });
 }
 
+/**
+ * Read every page and attach its text lines, for a searchable PDF.
+ *
+ * A page whose recognition fails still goes into the document — losing the
+ * searchable layer on one page is a small thing, losing the page is not. The
+ * engine is imported here rather than at the top of the module so that people
+ * who never tick the box never download it.
+ */
+async function addTextLayers(pages) {
+  const { recognisePage } = await import('./ocr.js');
+  const out = [];
+  let failures = 0;
+
+  for (let i = 0; i < pages.length; i++) {
+    setBusy(pages.length > 1
+      ? `Reading text, page ${i + 1} of ${pages.length}`
+      : 'Reading text');
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    try {
+      const blob = new Blob([pages[i].jpeg], { type: 'image/jpeg' });
+      const { lines } = await recognisePage(blob);
+      out.push({ ...pages[i], textLines: lines });
+    } catch (err) {
+      console.warn(`OCR failed on page ${i + 1}:`, err);
+      out.push(pages[i]);
+      failures++;
+    }
+  }
+  return { pages: out, failures };
+}
+
 async function doExport() {
   const suggested = defaultFilename();
   const chosen = prompt('File name', suggested);
   if (chosen === null) return;
-  setBusy('Building PDF');
+  const searchable = document.getElementById('ocr').checked;
+  setBusy(searchable ? 'Reading text' : 'Building PDF');
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
-    const result = await exportPdf(doc.pages(), chosen || suggested);
+    let pages = doc.pages();
+    let failures = 0;
+    if (searchable) {
+      ({ pages, failures } = await addTextLayers(pages));
+      setBusy('Building PDF');
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+    const result = await exportPdf(pages, chosen || suggested);
+    if (failures > 0) {
+      alert(failures === 1
+        ? 'One page could not be read, so it is in the PDF as an image only.'
+        : `${failures} pages could not be read, so they are in the PDF as images only.`);
+    }
     // Dismissing the share sheet resolves the same promise as a completed
     // share; only clear the document when the export actually completed, so
     // cancelling never loses the scanned pages. A download's completion can

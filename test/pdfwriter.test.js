@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPdf } from '../src/pdfwriter.js';
+import { buildPdf, pdfTextLayer } from '../src/pdfwriter.js';
 
 const latin1 = (bytes) => Buffer.from(bytes).toString('latin1');
 
@@ -423,3 +423,117 @@ test('PDF JPEG marker sequence is valid and component count matches /DeviceRGB',
     `SOF0 component count is ${result.componentCount} (expected 3 to match /DeviceRGB)`);
 });
 
+
+// --- searchable text layer -------------------------------------------------
+//
+// OCR text is drawn in render mode 3 (invisible) on top of the image, so the
+// page still looks exactly like the scan but the words can be searched, copied
+// and read by a screen reader.
+
+const words = (...specs) => specs.map(([text, x0, y0, x1, y1]) =>
+  ({ text, bbox: { x0, y0, x1, y1 } }));
+
+/** The box a page image occupies, in PDF points. */
+const box = { imageWidth: 1000, imageHeight: 2000, x: 0, y: 0, width: 500, height: 1000 };
+
+test('pdfTextLayer produces nothing when there are no words', () => {
+  assert.equal(pdfTextLayer([], box), '');
+  assert.equal(pdfTextLayer(undefined, box), '');
+});
+
+test('pdfTextLayer marks the text invisible and emits it', () => {
+  const out = pdfTextLayer(words(['Hello', 100, 100, 300, 150]), box);
+  assert.match(out, /^BT\n/, 'must open a text object');
+  assert.match(out, /\bETs*$|\bET$/, 'must close the text object');
+  assert.match(out, /\b3 Tr\b/, 'render mode 3 is what makes it invisible');
+  assert.match(out, /\(Hello\) Tj/);
+});
+
+test('pdfTextLayer flips image coordinates into PDF space', () => {
+  // The word sits in the top-left eighth of the image. PDF y counts upward, so
+  // it must land near the TOP of the page box, not the bottom.
+  const out = pdfTextLayer(words(['top', 0, 0, 100, 100]), box);
+  const [, x, y] = out.match(/1 0 0 1 ([\d.]+) ([\d.]+) Tm/);
+  assert.equal(Number(x), 0, 'left edge of the image is the left edge of the box');
+  assert.equal(Number(y), 950, 'a word 100px from the image top belongs 950pt up a 1000pt box');
+});
+
+test('pdfTextLayer scales the font to the height of the word box', () => {
+  const out = pdfTextLayer(words(['x', 0, 0, 100, 100]), box);
+  // 100 image px tall, image is 2000px mapped onto 1000pt, so 50pt.
+  assert.match(out, /\/F1 50\.00 Tf/);
+});
+
+test('pdfTextLayer escapes characters that would break a PDF string', () => {
+  const out = pdfTextLayer(words(['a(b)c\\d', 0, 0, 100, 50]), box);
+  // Compared as a literal, not a regex: the escaping under test is itself made
+  // of backslashes, and a pattern would have to double every one of them again.
+  assert.ok(out.includes('(a\\(b\\)c\\\\d) Tj'), out);
+});
+
+test('pdfTextLayer re-encodes text outside ASCII into WinAnsi escapes', () => {
+  // Tesseract returns a curly apostrophe for "Director's"; WinAnsi puts it at
+  // 0x92, which must be written as an octal escape, not passed through raw.
+  const out = pdfTextLayer(words(['Director\u2019s', 0, 0, 200, 50]), box);
+  assert.ok(out.includes('(Director\\222s) Tj'), out);
+});
+
+test('pdfTextLayer skips words it cannot place', () => {
+  const out = pdfTextLayer([
+    { text: 'ok', bbox: { x0: 0, y0: 0, x1: 100, y1: 50 } },
+    { text: 'nobox' },
+    { text: 'empty', bbox: { x0: 10, y0: 10, x1: 10, y1: 10 } },
+    { text: '', bbox: { x0: 0, y0: 0, x1: 50, y1: 50 } },
+  ], box);
+  assert.match(out, /\(ok\) Tj/);
+  assert.doesNotMatch(out, /nobox|empty/);
+  assert.equal((out.match(/Tj/g) ?? []).length, 1, 'exactly one word should survive');
+});
+
+test('a page with words gains a Helvetica font resource', () => {
+  const pdf = buildPdf([{ ...page(600, 800), textLines: words(['Searchable', 50, 50, 300, 110]) }]);
+  const s = latin1(pdf);
+  assert.match(s, /\/BaseFont \/Helvetica/);
+  assert.match(s, /\/Font << \/F1 \d+ 0 R >>/);
+  assert.match(s, /\(Searchable\) Tj/);
+  assert.match(s, /\/Encoding \/WinAnsiEncoding/);
+});
+
+test('a page without words carries no font resource at all', () => {
+  const s = latin1(buildPdf([page(600, 800)]));
+  assert.doesNotMatch(s, /\/Font/);
+  assert.doesNotMatch(s, /Helvetica/);
+});
+
+test('the text layer sits outside the image transform, in page coordinates', () => {
+  // The image is painted inside q ... Q. Text placed inside that block would
+  // inherit the image scale and land in the wrong place entirely.
+  const s = latin1(buildPdf([{ ...page(600, 800), textLines: words(['w', 0, 0, 60, 80]) }]));
+  const stream = s.slice(s.indexOf('/Im0 Do'));
+  assert.ok(stream.indexOf('Q') < stream.indexOf('BT'),
+    'the text object must begin after the image block is closed');
+});
+
+test('adding a text layer keeps the xref table honest', () => {
+  const pdf = buildPdf([
+    { ...page(600, 800), textLines: words(['one', 10, 10, 90, 60]) },
+    { ...page(400, 500), textLines: words(['two', 20, 20, 80, 70]) },
+  ]);
+  const s = latin1(pdf);
+  const startxref = Number(s.match(/startxref\s+(\d+)/)[1]);
+  assert.equal(s.slice(startxref, startxref + 4), 'xref');
+  const size = Number(s.match(/\/Size (\d+)/)[1]);
+  const entries = s.slice(startxref).match(/^\d{10} \d{5} [nf] $/gm);
+  assert.equal(entries.length, size, `xref should hold ${size} entries`);
+  for (let n = 1; n < size; n++) {
+    const offset = Number(entries[n].slice(0, 10));
+    assert.equal(s.slice(offset, offset + `${n} 0 obj`.length), `${n} 0 obj`,
+      `xref entry ${n} should point at object ${n}`);
+  }
+});
+
+test('declared Length still matches the stream once text is appended', () => {
+  const s = latin1(buildPdf([{ ...page(600, 800), textLines: words(['len', 5, 5, 95, 55]) }]));
+  const m = s.match(/<< \/Length (\d+) >>\nstream\n([\s\S]*?)\nendstream/);
+  assert.equal(Number(m[1]), m[2].length, 'declared Length must equal the actual bytes');
+});

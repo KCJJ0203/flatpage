@@ -123,3 +123,19 @@ button:disabled { opacity: .4; }
 #busy[hidden] { display: none; }
 
 .hint { color: var(--muted); font-size: .9rem; }
+
+/* The searchable-text opt-in: a checkbox and its explanation on one baseline. */
+.option {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  text-align: left;
+  margin-top: 0.9rem;
+}
+.option input {
+  flex: none;
+  margin-top: 0.15rem;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+#ocr-option[hidden] { display: none; }
