@@ -32,6 +32,34 @@ underlying physical cause — real camera noise, real uneven light, real paper.
    shadow line and sometimes a highlight, which can register as spurious
    ink or blow out to white and swallow nearby text.
 
+## The easy path (added 2026-08-24)
+
+Steps 1-3 below were written before auto edge detection existed, and they
+require running JavaScript in the phone's browser console. Don't. Use
+`tools/fixture-builder.html` instead:
+
+1. Photograph the five pages with the normal camera app. No need to open
+   Flatpage at all.
+2. Name each file after the case it covers: `slides.jpg`, `lined.jpg`,
+   `pencil.jpg`, `shadow.jpg`, `crease.jpg`.
+3. Serve the repo (any static server) and open
+   `tools/fixture-builder.html`, then drop all five in at once.
+4. Download the five `.json` files it produces into `test/fixtures/pages/`.
+5. `npm test` — the skip in `enhance-real.test.js` lifts on its own.
+
+The builder imports the shipped modules (`detect.js`, `warp.js`,
+`enhance.js`) rather than reimplementing them, so a fixture can only ever
+reflect what the app really does. It auto-detects the page corners and
+falls back to the default crop when it can't, and it reports which happened
+per file so a bad crop is visible rather than silent.
+
+Verified end to end on 2026-08-24 against a real photographed page: corners
+auto-detected, 1864x2500 source flattened to 1850x2460, fixture written at
+301x400, and both real assertions in `enhance-real.test.js` ran and passed.
+
+The manual route below still works and is kept for the case where the
+builder's crop is wrong and you want to supply your own pixels.
+
 ## Step 1 — capture and flatten
 
 Photograph each page type with the phone inside the Flatpage app, and carry

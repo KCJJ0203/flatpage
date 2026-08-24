@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flatpage fixture builder</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem;
+         background: #12151a; color: #e8eaed; }
+  h1 { font-size: 1.3rem; }
+  p { color: #a8b0bb; }
+  input[type=file] { margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a3038; font-size: 0.9rem; }
+  code { background: #1c2028; padding: 0.1rem 0.3rem; border-radius: 3px; }
+  .ok { color: #7ddc8f; } .warn { color: #e8c46a; }
+</style>
+</head>
+<body>
+
+<h1>Flatpage fixture builder</h1>
+<p>Drop in photographed pages. Each one is run through the real pipeline —
+auto corner detection, perspective warp, greyscale — and turned into a test
+fixture. Name each file after the case it covers
+(<code>slides</code>, <code>lined</code>, <code>pencil</code>,
+<code>shadow</code>, <code>crease</code>); anything else keeps its own name.</p>
+
+<input type="file" id="files" accept="image/*" multiple>
+<div id="out"></div>
+
+<script type="module">
+import { decodeFile } from '../src/capture.js';
+import { imageToPixels } from '../src/canvasio.js';
+import { detectPageQuad } from '../src/detect.js';
+import { defaultQuad } from '../src/ui/corners.js';
+import { outputSizeFor } from '../src/geometry.js';
+import { warpQuadToRect } from '../src/warp.js';
+import { toGreyscale } from '../src/enhance.js';
+
+const DETECT_WIDTH = 400;
+const TARGET = 400;
+
+/** Box-average down to a 400px long edge — the same reduction make-fixture.mjs does. */
+function downsampleGrey(image) {
+  const { width, height, data } = image;
+  const scale = Math.min(1, TARGET / Math.max(width, height));
+  const ow = Math.max(1, Math.round(width * scale));
+  const oh = Math.max(1, Math.round(height * scale));
+  const out = new Array(ow * oh);
+  const bx = width / ow;
+  const by = height / oh;
+  for (let y = 0; y < oh; y++) {
+    for (let x = 0; x < ow; x++) {
+      let sum = 0, n = 0;
+      for (let sy = Math.floor(y * by); sy < Math.min(height, Math.ceil((y + 1) * by)); sy++) {
+        for (let sx = Math.floor(x * bx); sx < Math.min(width, Math.ceil((x + 1) * bx)); sx++) {
+          sum += data[(sy * width + sx) * 4];
+          n++;
+        }
+      }
+      out[y * ow + x] = Math.round(sum / n);
+    }
+  }
+  return { width: ow, height: oh, grey: out };
+}
+
+/**
+ * One photo in, one fixture out.
+ *
+ * Deliberately the shipped modules rather than a reimplementation: a fixture
+ * built by different code would regress against something the app never does.
+ */
+export async function buildFixture(file, name) {
+  const photo = await decodeFile(file);
+  try {
+    const small = imageToPixels(photo.bitmap, DETECT_WIDTH);
+    const found = detectPageQuad(small);
+    const detected = Boolean(found);
+    // imageToPixels scales both axes by the same factor, so one number maps the
+    // detected quad back onto the full-resolution photo.
+    const scale = photo.width / small.width;
+    const quad = found
+      ? found.map((p) => ({ x: p.x * scale, y: p.y * scale }))
+      : defaultQuad(photo.width, photo.height);
+
+    const pixels = imageToPixels(photo.bitmap, Infinity);
+    const size = outputSizeFor(quad);
+    const flat = warpQuadToRect(pixels, quad, size.width, size.height);
+    const { width, height, grey } = downsampleGrey(toGreyscale(flat));
+    return {
+      fixture: { name, width, height, grey },
+      detected,
+      source: `${photo.width}x${photo.height}`,
+      flattened: `${size.width}x${size.height}`,
+    };
+  } finally {
+    photo.revoke();
+  }
+}
+
+// Exposed so a script can drive this page without touching the UI.
+window.buildFixture = buildFixture;
+
+document.getElementById('files').addEventListener('change', async (e) => {
+  const out = document.getElementById('out');
+  out.innerHTML = '<table><tr><th>File</th><th>Fixture</th><th>Corners</th><th></th></tr></table>';
+  const table = out.querySelector('table');
+  for (const file of e.target.files) {
+    const name = file.name.replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+    const row = table.insertRow();
+    row.innerHTML = `<td>${file.name}</td><td>…</td><td>…</td><td></td>`;
+    try {
+      const { fixture, detected, source, flattened } = await buildFixture(file, name);
+      const blob = new Blob([JSON.stringify(fixture)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      row.cells[1].innerHTML = `<code>${name}.json</code> ${fixture.width}×${fixture.height}`;
+      row.cells[2].innerHTML = detected
+        ? '<span class="ok">auto-detected</span>'
+        : '<span class="warn">fell back to default crop</span>';
+      row.cells[3].innerHTML = `<a href="${url}" download="${name}.json">download</a>`;
+      row.title = `source ${source}, flattened ${flattened}`;
+    } catch (err) {
+      row.cells[1].textContent = 'failed';
+      row.cells[2].innerHTML = `<span class="warn">${err.message}</span>`;
+    }
+  }
+});
+</script>
+</body>
+</html>
