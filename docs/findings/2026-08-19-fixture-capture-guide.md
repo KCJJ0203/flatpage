@@ -171,3 +171,28 @@ regress", use the fixture.
 Spec criterion 2 — "legible enough to read a pencil-written tutorial answer" —
 was confirmed met this way on `lined`, and the shadow across `slides` came out
 white rather than black, which is the case Sauvola exists for.
+
+## `lined` is the pencil case too (measured 2026-08-25)
+
+It was captured as lined-paper handwriting and assumed to be pen. Magnifying a
+stroke at native resolution settled it the other way: the darkest 1% of stroke
+pixels sit at **141** against paper at **227**, and the strokes have the soft,
+granular, unevenly-dense edges of graphite. Pen would land at 30-60 with hard
+edges and uniform density.
+
+That matters because it means spec criterion 2 — "legible enough to read a
+pencil-written tutorial answer" — is proven on actual faint pencil rather than
+approximated with ink, and at only 86 levels of contrast against the paper.
+
+Two lessons worth keeping. Judge the writing medium by measuring stroke
+darkness, not by looking at a downscaled photo — from the full-frame view this
+read as pen. And a fixture can cover more than the case it was captured for, so
+check what you actually have before asking for more.
+
+**On sourcing fixtures from the internet:** don't. The whole reason these are
+photographs is the physical causes a clean image cannot supply — sensor noise,
+uneven illumination, paper texture, the shadow of the phone itself. Images found
+online are usually flatbed scans or already-processed, so they would exercise
+none of it and would quietly make the suite look better than the app is. There
+is also a licensing problem: this repo is public, and a fixture is a derivative
+of the photo it came from.
