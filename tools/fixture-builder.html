@@ -70,18 +70,46 @@ function downsampleGrey(image) {
  * Deliberately the shipped modules rather than a reimplementation: a fixture
  * built by different code would regress against something the app never does.
  */
-export async function buildFixture(file, name) {
+/**
+ * The photo as the pipeline sees it, downscaled — EXIF rotation already
+ * applied. Used to choose corners by eye when detection gets them wrong.
+ */
+export async function previewPhoto(file, maxEdge = 500) {
+  const photo = await decodeFile(file);
+  try {
+    const px = imageToPixels(photo.bitmap, maxEdge);
+    const grey = new Array(px.width * px.height);
+    for (let p = 0; p < grey.length; p++) {
+      const i = p * 4;
+      grey[p] = Math.round(0.299 * px.data[i] + 0.587 * px.data[i + 1] + 0.114 * px.data[i + 2]);
+    }
+    return { width: px.width, height: px.height, grey, full: `${photo.width}x${photo.height}` };
+  } finally {
+    photo.revoke();
+  }
+}
+window.previewPhoto = previewPhoto;
+
+/**
+ * `manualQuad`, when given, is [TL, TR, BR, BL] in normalised 0-1 coordinates
+ * of the decoded photo. Detection assumes a page against a darker background;
+ * a sheet lying on a stack of identical sheets, or a notebook spread, has no
+ * such edge, and then the corners have to come from a human.
+ */
+export async function buildFixture(file, name, manualQuad = null) {
   const photo = await decodeFile(file);
   try {
     const small = imageToPixels(photo.bitmap, DETECT_WIDTH);
-    const found = detectPageQuad(small);
+    const found = manualQuad ? null : detectPageQuad(small);
     const detected = Boolean(found);
     // imageToPixels scales both axes by the same factor, so one number maps the
     // detected quad back onto the full-resolution photo.
     const scale = photo.width / small.width;
-    const quad = found
-      ? found.map((p) => ({ x: p.x * scale, y: p.y * scale }))
-      : defaultQuad(photo.width, photo.height);
+    const quad = manualQuad
+      ? manualQuad.map((p) => ({ x: p.x * photo.width, y: p.y * photo.height }))
+      : found
+        ? found.map((p) => ({ x: p.x * scale, y: p.y * scale }))
+        : defaultQuad(photo.width, photo.height);
 
     const pixels = imageToPixels(photo.bitmap, Infinity);
     const size = outputSizeFor(quad);
@@ -90,6 +118,7 @@ export async function buildFixture(file, name) {
     return {
       fixture: { name, width, height, grey },
       detected,
+      manual: Boolean(manualQuad),
       source: `${photo.width}x${photo.height}`,
       flattened: `${size.width}x${size.height}`,
     };

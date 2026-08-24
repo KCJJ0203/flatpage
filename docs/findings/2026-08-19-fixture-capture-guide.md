@@ -128,3 +128,46 @@ and re-run it, to see the previously-skipped tests execute for real. If any
 fail, that is Task 12 Step 4 in the original brief: tune `k` and the window
 size in `src/enhance.js` in response, and record what moved in
 `docs/findings/2026-08-19-threshold-tuning.md`.
+
+## What the first two real fixtures taught us (2026-08-24)
+
+`slides` and `lined` were captured from real photos. Both revealed something
+the synthetic fixtures could not.
+
+**Auto edge detection failed on both, in two different and both-legitimate
+ways.** `detect.js` assumes a bright page against a darker background. Neither
+photo offers that:
+
+- `slides` is one sheet lying on a stack of identical sheets. Otsu splits
+  "paper" from "desk", so the largest bright region is the whole stack, not the
+  top sheet. Every validation check passes, because a stack outline genuinely is
+  a large, convex, well-filled bright region. Margin blackness after Scan: 30.5%.
+- `lined` is a notebook spread. Detection took in the spiral binding and part of
+  the facing page. Margin blackness: 16.3%.
+
+Both were corrected by supplying corners by hand, which took margin blackness to
+6.2% and 0.8%. This is not a bug to fix so much as the boundary of the
+assumption, and it is exactly why the manual corner editor exists and why
+detection is only ever a suggestion. Worth remembering when judging a bad crop:
+detection returning a confidently wrong quad is worse than returning null, and
+there is no cheap signal that separates a sheet from an identical sheet beneath
+it.
+
+The corners used, normalised [TL, TR, BR, BL] against the decoded photo:
+
+```
+slides: (0.160,0.020) (0.930,0.015) (0.930,0.945) (0.160,0.950)
+lined:  (0.315,0.150) (0.870,0.160) (0.878,0.845) (0.315,0.858)
+```
+
+**Do not judge legibility from the fixture.** Fixtures are downsampled to a
+400px long edge so they read as a diff; the app thresholds the full-resolution
+page. On `lined` the 400px fixture looks thin and broken, which briefly read as
+Scan mode washing out the handwriting — at the real 1492x2500 it is completely
+legible, every word. When the question is "can he read his pencil", threshold at
+full resolution and look at that. When the question is "did thresholding
+regress", use the fixture.
+
+Spec criterion 2 — "legible enough to read a pencil-written tutorial answer" —
+was confirmed met this way on `lined`, and the shadow across `slides` came out
+white rather than black, which is the case Sauvola exists for.

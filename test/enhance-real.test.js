@@ -38,8 +38,21 @@ if (files.length === 0) {
     () => {},
   );
 } else {
-  test('there are real page fixtures to test against', () => {
-    assert.ok(files.length >= 5, `expected at least 5 fixtures, found ${files.length}`);
+  // The five cases the fixture set is meant to cover, each breaking adaptive
+  // thresholding a different way. Whatever is present gets asserted on below;
+  // whatever is absent is named in a skip rather than quietly tolerated, so a
+  // partial set reads as partial instead of passing for complete.
+  const INTENDED = ['slides', 'lined', 'pencil', 'shadow', 'crease'];
+  const have = files.map((f) => f.replace(/\.json$/, ''));
+  const missing = INTENDED.filter((n) => !have.includes(n));
+
+  test('the fixture set covers all five cases', {
+    skip: missing.length > 0
+      ? `covered: ${have.join(', ')} — still missing: ${missing.join(', ')} ` +
+        '(photograph them and run tools/fixture-builder.html)'
+      : false,
+  }, () => {
+    assert.deepEqual(missing, []);
   });
 
   for (const file of files) {
