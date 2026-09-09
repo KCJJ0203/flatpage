@@ -332,3 +332,32 @@ photograph of a real crease to tune against and to verify.
 What this does change is the priority of that photograph. `crease` was the last
 unticked box on a checklist; it is now the one case with **measured evidence that it
 breaks**, and the fix cannot be designed without it.
+
+## ANSWERED 2026-09-09 — it genuinely works offline
+
+`shell.test.js` asserts every source file is listed in the service worker's SHELL,
+but nothing had ever confirmed the app actually boots and works with no network. For
+something whose header says "on your device only", that is worth more than an
+inventory check.
+
+Tested by priming both caches and then **killing the server outright** — a truer
+offline than any emulation, since there is nothing left to answer.
+
+| with the server dead | |
+|---|---|
+| app boots | yes — full UI, both pages restored from IndexedDB |
+| all five core modules import | yes |
+| plain PDF | built, 692 KB |
+| **OCR from the cached engine** | **works — 1385 ms, 44 lines** |
+| searchable PDF | built, phrases present |
+| console | 1 error, and it is the deliberate control below |
+
+**The control that makes this mean something.** A test that passes because something
+quietly served the files from elsewhere proves nothing, so the run fetches a URL
+that cannot exist and requires it to fail. It did (`net::ERR_FAILED`) — that is the
+one console error. The network really was dead.
+
+Worth noting the engine cache is separate and unversioned (`flatpage-ocr-engine`),
+which is what lets OCR survive offline across shell releases: a version bump
+replaces the shell without throwing away the 7 MB of engine and re-downloading it.
+That design is now confirmed working rather than assumed.
