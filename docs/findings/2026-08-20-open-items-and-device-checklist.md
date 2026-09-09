@@ -145,3 +145,57 @@ treating 6 MB as unreachable.
 Still needs the actual phone: whether Safari survives holding ten full-resolution
 photos, the canvas-area cap, the file-input `cancel` event, and corner-drag latency.
 Nothing here substitutes for those.
+
+## ANSWERED 2026-09-09 — the browser layer, exercised rather than reviewed
+
+The section above says the browser layer "is untested by design and was reviewed
+instead." That is still true of the unit suite, but the layer has now been driven
+end to end in a real browser (desktop Chrome, served over localhost so the service
+worker and secure-context paths are live), using KC's two real photographs.
+
+The whole flow: home, "Scan a page", auto-detect, corner editor, Flatten, mode
+switch, Keep page, then "Add photos" for a second page, Keep, and Export PDF.
+
+**Zero console errors and zero warnings across the entire run.**
+
+What this establishes that source review could not:
+
+| | |
+|---|---|
+| default mode | Colour is genuinely the selected button at runtime, not just in markup |
+| flatten | 1728x2500 photo to a 2113x2500 page |
+| Scan output | clean white ground, crisp text, fully legible — the original "worse than CamScanner" complaint confirmed fixed on a real photo, in a real browser |
+| `session.js` | both pages persisted to IndexedDB (jpeg + width + height + thumbnail; 315 KB and 392 KB) |
+| `buildPdf` in-browser | `%PDF-1.4`, ends `%%EOF`, 2 page objects, 2 images, both MediaBoxes A4, 692 KB, 0.3 ms |
+| **no watermark** | **no `/Producer` and no `/Info` in the emitted bytes — verified at runtime, not only by reading the source** |
+| pages after export | correctly retained on the download path, as designed |
+
+### Two things the run surfaced
+
+**1. Detection fails loudly on a loose sheet and quietly on a notebook spread.**
+On the printed slide lying on a desk it tracked the page edges well. On the
+notebook spread it returned a *confidently wrong* quad — the top-left corner
+landed out in the dark background — rather than returning `null` and letting
+`detectQuad` fall back to `defaultQuad`. Both are recoverable, because the corner
+editor opens on top and the instruction says to drag the corners. But a wrong quad
+presented as a found one is a weaker failure mode than an honest default, and
+`MIN_FILL` did not catch it. Worth revisiting only if it annoys in use — it is the
+documented boundary of the assumption (page lighter than background), not a bug.
+
+**2. `navigator.share` may never fire on iOS, and would degrade silently.**
+`app.js:343` calls `prompt('File name', ...)` and only then, at line 356, calls
+`exportPdf`, which is where `navigator.share` lives. With the searchable box ticked
+an OCR pass sits between them as well, which can take a long time. Safari requires
+`share()` to be called under transient user activation, and a modal plus a long
+`await` is exactly what spends it.
+
+This is a **hypothesis, not a measurement** — it cannot be confirmed without the
+phone. It is worth writing down because the failure is invisible: `exportPdf`
+catches a non-`AbortError` share failure and falls through to the download path, so
+the app keeps working and the share sheet simply never appears. If that turns out to
+be what happens, the fix is to take the filename before the export begins (or drop
+the prompt for a default name) so the share call stays inside the gesture.
+
+Desktop Chrome cannot answer the iOS-specific questions — memory ceiling, the
+canvas-area cap, the file-input `cancel` event, corner-drag latency. Those still
+need the phone.
