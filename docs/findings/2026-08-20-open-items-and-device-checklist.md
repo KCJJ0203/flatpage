@@ -255,3 +255,32 @@ painting frames, so rAF is throttled and the export appears to hang for tens of
 seconds. It completes and the PDF is correct. This is the same effect already noted
 above for a backgrounded PWA — not a new defect, but it makes wall-clock timings
 taken this way meaningless.
+
+## ANSWERED 2026-09-09 — the OCR path works, and how long it takes
+
+The searchable-PDF feature had never been run end to end in a browser. It has now
+been, against page 1 of a real scanned session (2113x2500, the CACM formula sheet),
+with the engine served from `vendor/tesseract/`.
+
+| | |
+|---|---|
+| recognition | 44 lines, **1.6 s** for the page |
+| engine load | all five vendor files served and used; no network beyond the origin |
+| text quality | body text good — "Basic Derivatives", "ferentiation of Trigonometric Functions". The letterhead logo garbles, as expected of a stylised mark |
+| text layer | invisible render mode `3 Tr`, Helvetica declared |
+| searchable | all three probe phrases found in the emitted PDF |
+| cost of the layer | **2.9 KB** on a 316 KB page |
+| watermark | still none, with the text layer present |
+| console | 0 errors. 20 warnings, all from inside the tesseract WASM core, complaining about 1-2 px slivers it cannot read — almost certainly the thin dark edge band left by a generous crop. Benign. |
+
+### What the 1.6 s means for the share sheet
+
+This is the number the activation question turns on. Transient user activation lasts
+a few seconds after the tap. One page at 1.6 s on a desktop might just stay inside
+it; a phone at three to five times slower, or any document of more than a page or
+two, certainly will not.
+
+So the expectation for iOS is: **plain export should now reach the share sheet,
+searchable export will fall back to a download.** Both are usable, the fallback is
+handled, and the difference is invisible unless you know to look for it. Still needs
+the phone to confirm.

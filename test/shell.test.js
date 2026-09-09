@@ -31,6 +31,28 @@ test('the service worker declares a version', () => {
   assert.match(read('sw.js'), /^const VERSION = 'flatpage-v\d+';$/m);
 });
 
+// Bumping VERSION is not enough on its own. `cache.addAll` fetches with ordinary
+// HTTP cache semantics, so a shell file still sitting in the browser's own cache
+// is copied into the new version cache unchanged — and a released fix never
+// reaches an installed PWA. Measured 9 Sep 2026: a bump to v8 populated the new
+// cache with v7's app.js, byte for byte, and the page went on running the old
+// code. The install handler must force each request past the HTTP cache.
+test('the service worker install fetches the shell past the HTTP cache', () => {
+  const sw = read('sw.js');
+  // Sliced rather than matched: the handler spans lines, and a multi-line
+  // regex here is exactly the kind of escaping that goes wrong silently.
+  const start = sw.indexOf("addEventListener('install'");
+  assert.notEqual(start, -1, 'sw.js should register an install handler');
+  const end = sw.indexOf("addEventListener('activate'", start);
+  const install = sw.slice(start, end === -1 ? undefined : end);
+
+  assert.doesNotMatch(install, /cache\.addAll\s*\(/,
+    'install uses cache.addAll, which can copy stale files out of the HTTP cache ' +
+    "into the new version cache — fetch each entry with { cache: 'reload' } instead");
+  assert.match(install, /cache:\s*'reload'/,
+    "install should fetch shell entries with { cache: 'reload' }");
+});
+
 // Every source file has to be listed in the service worker's SHELL. Miss one
 // and the app keeps working online, then breaks the first time it is opened
 // without a connection — the failure is invisible until it matters most.
