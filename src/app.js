@@ -339,9 +339,15 @@ async function addTextLayers(pages) {
 }
 
 async function doExport() {
-  const suggested = defaultFilename();
-  const chosen = prompt('File name', suggested);
-  if (chosen === null) return;
+  // The name is chosen for you, deliberately. `navigator.share` must be called
+  // while the tap that started the export still counts as user activation, and
+  // that activation expires a few seconds after the tap. A `prompt('File name')`
+  // here used to sit in that window for as long as the user took to type, so on
+  // iOS the share sheet could simply never appear - and invisibly, because
+  // exportPdf catches the failure and falls through to a download. Rename the
+  // file afterwards in Files or Drive; that costs a second, and a share sheet
+  // that never opens costs the whole feature.
+  const filename = defaultFilename();
   const searchable = document.getElementById('ocr').checked;
   setBusy(searchable ? 'Reading text' : 'Building PDF');
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -353,7 +359,7 @@ async function doExport() {
       setBusy('Building PDF');
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     }
-    const result = await exportPdf(pages, chosen || suggested);
+    const result = await exportPdf(pages, filename);
     if (failures > 0) {
       alert(failures === 1
         ? 'One page could not be read, so it is in the PDF as an image only.'

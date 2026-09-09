@@ -199,3 +199,59 @@ the prompt for a default name) so the share call stays inside the gesture.
 Desktop Chrome cannot answer the iOS-specific questions — memory ceiling, the
 canvas-area cap, the file-input `cancel` event, corner-drag latency. Those still
 need the phone.
+
+## FIXED 2026-09-09 — the share gesture, and a bug found underneath it
+
+Two changes, the second more consequential than the first.
+
+### 1. The filename prompt is gone
+
+`doExport` used to call `prompt('File name', ...)` and only then reach
+`navigator.share`. The problem is not the modal itself — it is the *unbounded human
+delay* inside it. Transient user activation expires a few seconds after the tap, and
+someone typing a filename easily outlasts that, so `share()` would reject.
+
+The name now comes from `defaultFilename()` and Export is one tap. Rename the file
+afterwards in Files or Drive; that costs a second, and a share sheet that never
+opens costs the whole feature.
+
+**Still a hypothesis for the OCR path.** With the searchable box ticked, an OCR pass
+of seconds to minutes sits between the tap and the share, and no amount of
+reordering keeps activation alive across it. That path will likely always fall back
+to a download on iOS. That is inherent, it degrades gracefully, and it needs the
+phone to confirm.
+
+### 2. `cache.addAll` was serving stale code — bumping VERSION was not enough
+
+Found while trying to verify the fix above: the change was on disk and on the wire,
+but the running page kept executing the old code.
+
+Measured, not inferred:
+
+| | |
+|---|---|
+| app.js on disk and over HTTP | 16694 bytes, no `prompt` |
+| what the page actually ran | **16182 bytes, with the `prompt`** |
+| after bumping VERSION v7 → v8 | **still 16182 — the new cache was filled with the old file** |
+
+The install handler used `cache.addAll(SHELL)`, which fetches with ordinary HTTP
+cache semantics. A shell file sitting in the browser's own cache is copied into the
+new version cache unchanged, so **a released fix can silently never reach an
+installed PWA even though the version was bumped.**
+
+The install handler now fetches each shell entry with `cache: 'reload'`, forcing the
+network. Any failure rejects, install fails, and the previous shell stays whole —
+preserving the atomicity the version scheme exists for. Verified: under `v9` the
+cache holds the 16694-byte file, `v8` was evicted, and Export now goes straight to
+the export with no dialog.
+
+This one is worth remembering beyond Flatpage. Bumping a service-worker version
+proves nothing on its own; check what the *cache* actually holds.
+
+### A note on measuring in an automated browser
+
+`doExport` awaits two `requestAnimationFrame` ticks. An automated browser is not
+painting frames, so rAF is throttled and the export appears to hang for tens of
+seconds. It completes and the PDF is correct. This is the same effect already noted
+above for a backgrounded PWA — not a new defect, but it makes wall-clock timings
+taken this way meaningless.

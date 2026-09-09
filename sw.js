@@ -5,7 +5,7 @@
  * VERSION on any release and the whole shell is replaced atomically. Nothing
  * this worker touches is user data — scans never leave the page.
  */
-const VERSION = 'flatpage-v7';
+const VERSION = 'flatpage-v9';
 
 /**
  * The OCR engine, cached separately and deliberately without a version.
@@ -47,7 +47,21 @@ const SHELL = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(VERSION).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()),
+    caches.open(VERSION).then((cache) => Promise.all(
+      // NOT cache.addAll: that fetches with ordinary HTTP cache semantics, so a
+      // shell file still sitting in the browser's own cache gets copied into the
+      // new version cache unchanged - and a released fix never reaches an
+      // installed PWA even though VERSION was bumped. Measured 9 Sep 2026: a
+      // bump to v8 populated the new cache with v7's app.js, byte for byte.
+      // `cache: 'reload'` forces each request past the HTTP cache to the network.
+      // Any failure rejects, install fails, and the previous shell stays whole -
+      // which is the atomicity the version scheme is for.
+      SHELL.map(async (path) => {
+        const response = await fetch(new Request(path, { cache: 'reload' }));
+        if (!response.ok) throw new Error(`shell fetch failed: ${path} (${response.status})`);
+        await cache.put(path, response);
+      }),
+    )).then(() => self.skipWaiting()),
   );
 });
 
