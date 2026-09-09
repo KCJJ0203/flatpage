@@ -284,3 +284,51 @@ So the expectation for iOS is: **plain export should now reach the share sheet,
 searchable export will fall back to a download.** Both are usable, the fallback is
 handled, and the difference is invisible unless you know to look for it. Still needs
 the phone to confirm.
+
+## MEASURED 2026-09-09 — a crease turns into a black stripe
+
+The `crease` fixture is still missing, and a folded page cannot be conjured up. But
+what a fold does to a page *can* be modelled: the valley of the crease sits in
+shadow, so a narrow band is darker than the paper around it. Applying that to the
+two real fixtures and running Scan mode gives a clear answer.
+
+`tools/crease-probe.mjs` reproduces all of this.
+
+`valley` below is how dark the fold line is against the paper — 1.00 is no fold,
+0.70 is a shadow 30% darker than the page.
+
+| valley | ink in the fold strip (slides) | control strip |
+|---|---|---|
+| no fold | 0.75% | 10.53% |
+| 0.95 – 0.85 | 0.83% – 1.31% | 10.53% |
+| 0.80 | 1.67% | 10.53% |
+| **0.70** | **13.61%** | 10.53% |
+| 0.60 | 34.06% | 10.53% |
+| 0.55 | 34.42% | 10.53% |
+
+`lined` behaves the same way, 2.83% to 37.42%.
+
+**Read the control column first.** It does not move at all across the whole sweep.
+The page did not darken overall; the fold alone went black.
+
+So: a fold shadow around **30% darker than the paper** starts turning into a stripe,
+and by 45% darker it is a solid black band running the height of the page. A 30%
+shadow is not an extreme crease — it is an ordinary one under a single light.
+
+**Flattening does not rescue it.** `flattenIllumination` was the obvious candidate,
+since it is what fixed the dingy-scan complaint for Colour mode. It moves the fold
+strip from 34.06% to 31.69% — nothing. The fold is far narrower than the background
+radius, so the background estimate smooths straight over it and the valley survives
+as a local dark feature. The existing comment in `enhance.js` — that Scan measures
+much the same with or without flattening — holds here too.
+
+### Deliberately not fixed
+
+No change has been made to the thresholding. Tuning it against a fold this probe
+invented would be the same mistake as tuning the page detector against a single
+photograph: the model would end up fitting itself. Any real fix needs a real
+photograph of a real crease to tune against and to verify.
+
+What this does change is the priority of that photograph. `crease` was the last
+unticked box on a checklist; it is now the one case with **measured evidence that it
+breaks**, and the fix cannot be designed without it.
