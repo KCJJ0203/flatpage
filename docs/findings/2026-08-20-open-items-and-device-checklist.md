@@ -112,3 +112,36 @@ tutorial answer" — is unverified.**
 - The mode cache holds a second full-resolution buffer alongside the flattened page
   for the review screen's lifetime — a deliberate CPU-for-memory trade, released on
   commit or discard.
+
+## ANSWERED 2026-09-09 — the 10-page PDF size question
+
+> *"Whether a 10-page B&W PDF lands under 6MB, and whether it opens on the PC."*
+
+Both settled, without a phone.
+
+Built a 10-page document from the two **real** fixture photos put through the
+shipped pipeline (warp, Scan mode, `pixelsToJpeg` at 0.8) and assembled with
+`buildPdf` at A4:
+
+| | |
+|---|---|
+| source pages | 1552x2500 and 1492x2500, 2.99% and 3.43% ink |
+| per-page JPEG | 203 KB and 255 KB |
+| **10-page PDF** | **2.24 MB — comfortably under 6 MB** |
+| assembly time | 2 ms |
+| opens on PC | yes — 10 pages, every MediaBox 595x842, one image each, renders correctly |
+
+**The caveat that makes the number meaningful.** My first attempt used a synthetic
+page and returned 6.23 MB, i.e. over budget. That fixture was 14.56% ink against
+2.99-3.43% on real pages — four to five times too dense — so it was measuring an
+imaginary document. Real pages come in at about a third of the budget.
+
+Read it this way: a normal ten-page scan is ~2.2 MB, and it would take a page set
+roughly four times denser than real handwriting or printed slides to reach 6 MB.
+That is not a realistic document, but it is not impossible either (a page of solid
+dark diagrams would approach it), so the ceiling is worth remembering rather than
+treating 6 MB as unreachable.
+
+Still needs the actual phone: whether Safari survives holding ten full-resolution
+photos, the canvas-area cap, the file-input `cancel` event, and corner-drag latency.
+Nothing here substitutes for those.
